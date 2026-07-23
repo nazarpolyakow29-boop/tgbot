@@ -11,76 +11,122 @@ from aiogram.types import (
     InlineKeyboardButton,
     LabeledPrice,
     PreCheckoutQuery,
-    FSInputFile
+    FSInputFile,
 )
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
 
-bot = Bot(BOT_TOKEN)
-dp = Dispatcher()
+# =========================
+# НАСТРОЙКИ
+# =========================
+
+BOT_TOKEN = os.getenv("BOT_TOKEN")
 
 PRICE = 100
 VIDEO_FILE = "video.mp4"
 USERS_FILE = "users.json"
 
 
+# =========================
+# ПРОВЕРКА ТОКЕНА
+# =========================
+
+if not BOT_TOKEN:
+    raise ValueError("Ошибка: переменная BOT_TOKEN не найдена!")
+
+
+# =========================
+# СОЗДАНИЕ БОТА
+# =========================
+
+bot = Bot(token=BOT_TOKEN)
+dp = Dispatcher()
+
+
+# =========================
+# РАБОТА С ПОЛЬЗОВАТЕЛЯМИ
+# =========================
+
 def load_users():
     if not os.path.exists(USERS_FILE):
         return []
-    with open(USERS_FILE, "r", encoding="utf-8") as f:
-        return json.load(f)
+
+    try:
+        with open(USERS_FILE, "r", encoding="utf-8") as file:
+            return json.load(file)
+    except (json.JSONDecodeError, FileNotFoundError):
+        return []
 
 
 def save_users(users):
-    with open(USERS_FILE, "w", encoding="utf-8") as f:
-        json.dump(users, f)
+    with open(USERS_FILE, "w", encoding="utf-8") as file:
+        json.dump(users, file)
 
 
-menu = InlineKeyboardMarkup(
+# =========================
+# КНОПКА ПОКУПКИ
+# =========================
+
+buy_keyboard = InlineKeyboardMarkup(
     inline_keyboard=[
         [
             InlineKeyboardButton(
-                text=f"⭐ Купить видео ({PRICE} Stars)",
-                callback_data="buy"
+                text=f"⭐ Купить видео — {PRICE} Stars",
+                callback_data="buy_video"
             )
         ]
     ]
 )
+
+
+# =========================
+# КОМАНДА /START
+# =========================
+
 @dp.message(CommandStart())
 async def start(message: Message):
+    user_id = message.from_user.id
     users = load_users()
 
-    if message.from_user.id in users:
+    # Если пользователь уже покупал видео
+    if user_id in users:
         keyboard = InlineKeyboardMarkup(
             inline_keyboard=[
                 [
                     InlineKeyboardButton(
                         text="🎥 Получить видео",
-                        callback_data="video"
+                        callback_data="get_video"
                     )
                 ]
             ]
         )
 
         await message.answer(
-            "✅ Вы уже купили это видео.",
+            "✅ Вы уже приобрели это видео.\n\n"
+            "Нажмите кнопку ниже, чтобы получить его снова.",
             reply_markup=keyboard
         )
         return
 
+    # Новый пользователь
     await message.answer(
-        "🎥 Привет!\n\n"
-        "Нажми кнопку ниже, чтобы купить видео.",
-        reply_markup=menu
+        "🎥 Добро пожаловать!\n\n"
+        f"Стоимость видео: ⭐ {PRICE} Stars\n\n"
+        "Нажмите кнопку ниже, чтобы купить видео.",
+        reply_markup=buy_keyboard
     )
 
 
-@dp.callback_query(F.data == "buy")
-async def buy(callback: CallbackQuery):
+# =========================
+# ПОКУПКА ВИДЕО
+# =========================
+
+@dp.callback_query(F.data == "buy_video")
+async def buy_video(callback: CallbackQuery):
+
     await callback.message.answer_invoice(
-        title="Видео",
-        description="Покупка видео",
-        payload="video_buy",
+        title="🎥 Видео",
+        description="Покупка доступа к видео",
+        payload="video_purchase",
         provider_token="",
         currency="XTR",
         prices=[
@@ -92,31 +138,87 @@ async def buy(callback: CallbackQuery):
     )
 
     await callback.answer()
-  @dp.pre_checkout_query()
-async def pre_checkout(pre_checkout_query: PreCheckoutQuery):
-    await pre_checkout_query.answer(ok=True)
 
 
-@dp.message(F.successful_payment)
-async def successful_payment(message: Message):
-    users = load_users()
+# =========================
+# ПОДТВЕРЖДЕНИЕ ПЛАТЕЖА
+# =========================
 
-    if message.from_user.id not in users:
-        users.append(message.from_user.id)
-        save_users(users)
-
-    video = FSInputFile(VIDEO_FILE)
-
-    await message.answer("✅ Оплата прошла успешно!")
-
-    await message.answer_video(
-        video=video,
-        caption="🎉 Спасибо за покупку!"
+@dp.pre_checkout_query()
+async def process_pre_checkout(
+    pre_checkout_query: PreCheckoutQuery
+):
+    await pre_checkout_query.answer(
+        ok=True
     )
 
 
-@dp.callback_query(F.data == "video")
-async def send_video(callback: CallbackQuery):
+# =========================
+# УСПЕШНАЯ ОПЛАТА
+# =========================
+
+@dp.message(F.successful_payment)
+async def successful_payment(message: Message):
+
+    user_id = message.from_user.id
+
+    users = load_users()
+
+    # Добавляем пользователя в список купивших
+    if user_id not in users:
+        users.append(user_id)
+        save_users(users)
+
+    # Проверяем наличие видео
+    if not os.path.exists(VIDEO_FILE):
+        await message.answer(
+            "❌ Оплата прошла успешно, "
+            "но видео временно недоступно. "
+            "Пожалуйста, свяжитесь с администратором."
+        )
+        return
+
+    await message.answer(
+        "✅ Оплата успешно завершена!\n\n"
+        "🎥 Сейчас отправлю ваше видео..."
+    )
+
+    # Отправляем видео
+    video = FSInputFile(VIDEO_FILE)
+
+    await message.answer_video(
+        video=video,
+        caption="🎉 Спасибо за покупку! Приятного просмотра!"
+    )
+
+
+# =========================
+# ПОВТОРНАЯ ОТПРАВКА ВИДЕО
+# =========================
+
+@dp.callback_query(F.data == "get_video")
+async def get_video(callback: CallbackQuery):
+
+    user_id = callback.from_user.id
+
+    users = load_users()
+
+    # Проверяем, покупал ли пользователь видео
+    if user_id not in users:
+        await callback.answer(
+            "Сначала необходимо купить видео.",
+            show_alert=True
+        )
+        return
+
+    # Проверяем наличие файла
+    if not os.path.exists(VIDEO_FILE):
+        await callback.answer(
+            "Видео временно недоступно.",
+            show_alert=True
+        )
+        return
+
     video = FSInputFile(VIDEO_FILE)
 
     await callback.message.answer_video(
@@ -125,21 +227,24 @@ async def send_video(callback: CallbackQuery):
     )
 
     await callback.answer()
-  async def main():
-    print("Бот запущен...")
+
+
+# =========================
+# ЗАПУСК БОТА
+# =========================
+
+async def main():
+
+    print("=================================")
+    print("Бот запускается...")
+    print("=================================")
+
     await dp.start_polling(bot)
 
 
-if __name__ == "__main__":
-    asyncio.run(main())        video=video,
-        caption="🎥 Ваше видео."
-    )
-
-    await callback.answer()
-  async def main():
-    print("Бот запущен...")
-    await dp.start_polling(bot)
-
+# =========================
+# MAIN
+# =========================
 
 if __name__ == "__main__":
     asyncio.run(main())
