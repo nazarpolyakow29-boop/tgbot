@@ -23,7 +23,7 @@ from aiogram.types import (
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
-PRICE = 8
+PRICE = 5
 
 VIDEO_FILE = "video.mp4"
 USERS_FILE = "users.json"
