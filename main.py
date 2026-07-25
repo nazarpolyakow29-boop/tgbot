@@ -30,11 +30,10 @@ VIDEO_FILE = "video.mp4"
 # Все пользователи, которые нажали /start
 USERS_FILE = "users.json"
 
-# Только пользователи, которые купили видео
+# Пользователи, которые купили видео
 BUYERS_FILE = "buyers.json"
 
-# ВАЖНО:
-# Замени 123456789 на свой Telegram ID
+# ТВОЙ TELEGRAM ID
 ADMIN_ID = 5800940022
 
 PORT = int(os.getenv("PORT", 10000))
@@ -60,7 +59,7 @@ dp = Dispatcher()
 
 
 # ==========================================
-# ФУНКЦИИ РАБОТЫ С JSON
+# РАБОТА С JSON
 # ==========================================
 
 def load_json(filename):
@@ -157,10 +156,7 @@ buy_keyboard = InlineKeyboardMarkup(
 
             InlineKeyboardButton(
 
-                text=(
-                    f"⭐ Купить видео — "
-                    f"{PRICE} Stars"
-                ),
+                text=f"⭐ Купить видео — {PRICE} Stars",
 
                 callback_data="buy_video"
 
@@ -183,32 +179,27 @@ async def start(message: Message):
     user_id = message.from_user.id
 
     # ======================================
-    # СОХРАНЯЕМ ВСЕХ ПОЛЬЗОВАТЕЛЕЙ
+    # СОХРАНЯЕМ ПОЛЬЗОВАТЕЛЯ
     # ======================================
 
     users = load_users()
 
     if user_id not in users:
 
-        users.append(
-            user_id
-        )
+        users.append(user_id)
 
-        save_users(
-            users
-        )
+        save_users(users)
 
         print(
-            f"Новый пользователь: {user_id}"
+            f"Новый пользователь добавлен: {user_id}"
         )
 
 
     # ======================================
-    # ПРОВЕРЯЕМ ПОКУПАЛ ЛИ ПОЛЬЗОВАТЕЛЬ
+    # ПРОВЕРЯЕМ ПОКУПКУ
     # ======================================
 
     buyers = load_buyers()
-
 
     if user_id in buyers:
 
@@ -264,6 +255,46 @@ async def start(message: Message):
 
 
 # ==========================================
+# КОМАНДА /USERS
+# ==========================================
+
+@dp.message(Command("users"))
+async def users_count(message: Message):
+
+    # Только для администратора
+
+    if message.from_user.id != ADMIN_ID:
+
+        await message.answer(
+            "❌ У вас нет доступа к этой команде."
+        )
+
+        return
+
+
+    # Загружаем пользователей
+
+    users = load_users()
+
+    users_count_number = len(users)
+
+
+    # Показываем количество
+
+    await message.answer(
+
+        "📊 Статистика бота\n\n"
+
+        f"👥 Всего пользователей: "
+        f"{users_count_number}\n\n"
+
+        "📢 Именно столько пользователей "
+        "получит сообщение при рассылке."
+
+    )
+
+
+# ==========================================
 # ПОКУПКА ВИДЕО
 # ==========================================
 
@@ -278,9 +309,7 @@ async def buy_video(
 
         title="🎥 Видео",
 
-        description=(
-            "Покупка доступа к видео"
-        ),
+        description="Покупка доступа к видео",
 
         payload="video_purchase",
 
@@ -311,15 +340,11 @@ async def buy_video(
 
 @dp.pre_checkout_query()
 async def process_pre_checkout(
-
     pre_checkout_query: PreCheckoutQuery
-
 ):
 
     await pre_checkout_query.answer(
-
         ok=True
-
     )
 
 
@@ -331,14 +356,10 @@ async def process_pre_checkout(
     F.successful_payment
 )
 async def successful_payment(
-
     message: Message
-
 ):
 
-    user_id = (
-        message.from_user.id
-    )
+    user_id = message.from_user.id
 
 
     # ======================================
@@ -349,9 +370,7 @@ async def successful_payment(
 
     if user_id not in buyers:
 
-        buyers.append(
-            user_id
-        )
+        buyers.append(user_id)
 
         save_buyers(
             buyers
@@ -396,11 +415,8 @@ async def successful_payment(
     # ======================================
 
     video = FSInputFile(
-
         VIDEO_FILE
-
     )
-
 
     await message.answer_video(
 
@@ -425,14 +441,10 @@ async def successful_payment(
     F.data == "get_video"
 )
 async def get_video(
-
     callback: CallbackQuery
-
 ):
 
-    user_id = (
-        callback.from_user.id
-    )
+    user_id = callback.from_user.id
 
 
     # ======================================
@@ -440,7 +452,6 @@ async def get_video(
     # ======================================
 
     buyers = load_buyers()
-
 
     if user_id not in buyers:
 
@@ -479,11 +490,8 @@ async def get_video(
     # ======================================
 
     video = FSInputFile(
-
         VIDEO_FILE
-
     )
-
 
     await callback.message.answer_video(
 
@@ -492,7 +500,6 @@ async def get_video(
         caption="🎥 Ваше видео."
 
     )
-
 
     await callback.answer()
 
@@ -505,12 +512,12 @@ async def get_video(
     Command("broadcast")
 )
 async def broadcast(
-
     message: Message
-
 ):
 
-    # Только администратор
+    # ======================================
+    # ПРОВЕРЯЕМ АДМИНИСТРАТОРА
+    # ======================================
 
     if message.from_user.id != ADMIN_ID:
 
@@ -524,15 +531,33 @@ async def broadcast(
         return
 
 
-    # Проверяем текст после команды
+    # ======================================
+    # ПОЛУЧАЕМ ТЕКСТ
+    # ======================================
 
-    text = message.text
+    text = message.text or ""
 
-    if not text:
+    broadcast_text = text[
+        len("/broadcast"):
+    ].strip()
+
+
+    # ======================================
+    # ЕСЛИ ТЕКСТ НЕ УКАЗАН
+    # ======================================
+
+    if not broadcast_text:
+
+        users = load_users()
 
         await message.answer(
 
-            "Использование:\n\n"
+            "📢 Рассылка\n\n"
+
+            f"👥 Получателей: {len(users)}\n\n"
+
+            "Чтобы сделать рассылку, "
+            "напишите:\n\n"
 
             "/broadcast Ваш текст"
 
@@ -541,31 +566,8 @@ async def broadcast(
         return
 
 
-    # Убираем команду /broadcast
-
-    broadcast_text = text[
-        len("/broadcast"):
-    ].strip()
-
-
-    if not broadcast_text:
-
-        await message.answer(
-
-            "❌ Вы не указали текст.\n\n"
-
-            "Пример:\n"
-
-            "/broadcast Привет! "
-            "У нас новое видео 🎥"
-
-        )
-
-        return
-
-
     # ======================================
-    # ЗАГРУЖАЕМ ВСЕХ ПОЛЬЗОВАТЕЛЕЙ
+    # ЗАГРУЖАЕМ ПОЛЬЗОВАТЕЛЕЙ
     # ======================================
 
     users = load_users()
@@ -573,8 +575,9 @@ async def broadcast(
 
     await message.answer(
 
-        f"📢 Начинаю рассылку.\n\n"
-        f"Пользователей: {len(users)}"
+        "📢 Начинаю рассылку.\n\n"
+
+        f"👥 Получателей: {len(users)}"
 
     )
 
@@ -630,7 +633,7 @@ async def broadcast(
 
         "✅ Рассылка завершена!\n\n"
 
-        f"📨 Отправлено: {success}\n"
+        f"📨 Успешно отправлено: {success}\n"
 
         f"❌ Ошибок: {failed}"
 
@@ -642,15 +645,11 @@ async def broadcast(
 # ==========================================
 
 async def health_check(
-
     request
-
 ):
 
     return web.Response(
-
         text="Bot is running!"
-
     )
 
 
@@ -660,27 +659,19 @@ async def start_web_server():
 
 
     app.router.add_get(
-
         "/",
-
         health_check
-
     )
 
 
     app.router.add_get(
-
         "/health",
-
         health_check
-
     )
 
 
     runner = web.AppRunner(
-
         app
-
     )
 
 
@@ -736,6 +727,10 @@ async def main():
     )
 
     print(
+        f"Admin ID: {ADMIN_ID}"
+    )
+
+    print(
         "================================="
     )
 
@@ -748,9 +743,7 @@ async def main():
     # Запускаем Telegram-бота
 
     await dp.start_polling(
-
         bot
-
     )
 
 
@@ -761,7 +754,5 @@ async def main():
 if __name__ == "__main__":
 
     asyncio.run(
-
         main()
-
     )
