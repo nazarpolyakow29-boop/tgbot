@@ -5,7 +5,7 @@ import os
 from aiohttp import web
 
 from aiogram import Bot, Dispatcher, F
-from aiogram.filters import CommandStart
+from aiogram.filters import CommandStart, Command
 from aiogram.types import (
     Message,
     CallbackQuery,
@@ -26,7 +26,16 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 PRICE = 4
 
 VIDEO_FILE = "video.mp4"
+
+# Все пользователи, которые нажали /start
 USERS_FILE = "users.json"
+
+# Только пользователи, которые купили видео
+BUYERS_FILE = "buyers.json"
+
+# ВАЖНО:
+# Замени 123456789 на свой Telegram ID
+ADMIN_ID = 5800940022
 
 PORT = int(os.getenv("PORT", 10000))
 
@@ -46,38 +55,52 @@ if not BOT_TOKEN:
 # ==========================================
 
 bot = Bot(token=BOT_TOKEN)
+
 dp = Dispatcher()
 
 
 # ==========================================
-# РАБОТА С ПОЛЬЗОВАТЕЛЯМИ
+# ФУНКЦИИ РАБОТЫ С JSON
 # ==========================================
 
-def load_users():
-    if not os.path.exists(USERS_FILE):
+def load_json(filename):
+
+    if not os.path.exists(filename):
         return []
 
     try:
+
         with open(
-            USERS_FILE,
+            filename,
             "r",
             encoding="utf-8"
         ) as file:
-            return json.load(file)
 
-    except (json.JSONDecodeError, FileNotFoundError):
+            data = json.load(file)
+
+            if isinstance(data, list):
+                return data
+
+            return []
+
+    except (
+        json.JSONDecodeError,
+        FileNotFoundError
+    ):
+
         return []
 
 
-def save_users(users):
+def save_json(filename, data):
+
     with open(
-        USERS_FILE,
+        filename,
         "w",
         encoding="utf-8"
     ) as file:
 
         json.dump(
-            users,
+            data,
             file,
             ensure_ascii=False,
             indent=2
@@ -85,18 +108,68 @@ def save_users(users):
 
 
 # ==========================================
+# ПОЛЬЗОВАТЕЛИ
+# ==========================================
+
+def load_users():
+
+    return load_json(
+        USERS_FILE
+    )
+
+
+def save_users(users):
+
+    save_json(
+        USERS_FILE,
+        users
+    )
+
+
+# ==========================================
+# ПОКУПАТЕЛИ
+# ==========================================
+
+def load_buyers():
+
+    return load_json(
+        BUYERS_FILE
+    )
+
+
+def save_buyers(buyers):
+
+    save_json(
+        BUYERS_FILE,
+        buyers
+    )
+
+
+# ==========================================
 # КЛАВИАТУРА ПОКУПКИ
 # ==========================================
 
 buy_keyboard = InlineKeyboardMarkup(
+
     inline_keyboard=[
+
         [
+
             InlineKeyboardButton(
-                text=f"⭐ Купить видео — {PRICE} Stars",
+
+                text=(
+                    f"⭐ Купить видео — "
+                    f"{PRICE} Stars"
+                ),
+
                 callback_data="buy_video"
+
             )
+
         ]
+
     ]
+
 )
 
 
@@ -109,54 +182,105 @@ async def start(message: Message):
 
     user_id = message.from_user.id
 
+    # ======================================
+    # СОХРАНЯЕМ ВСЕХ ПОЛЬЗОВАТЕЛЕЙ
+    # ======================================
+
     users = load_users()
 
-    # Если пользователь уже покупал видео
-    if user_id in users:
+    if user_id not in users:
+
+        users.append(
+            user_id
+        )
+
+        save_users(
+            users
+        )
+
+        print(
+            f"Новый пользователь: {user_id}"
+        )
+
+
+    # ======================================
+    # ПРОВЕРЯЕМ ПОКУПАЛ ЛИ ПОЛЬЗОВАТЕЛЬ
+    # ======================================
+
+    buyers = load_buyers()
+
+
+    if user_id in buyers:
 
         keyboard = InlineKeyboardMarkup(
+
             inline_keyboard=[
+
                 [
+
                     InlineKeyboardButton(
+
                         text="🎥 Получить видео",
+
                         callback_data="get_video"
+
                     )
+
                 ]
+
             ]
+
         )
 
         await message.answer(
+
             "✅ Вы уже приобрели это видео.\n\n"
             "Нажмите кнопку ниже, "
             "чтобы получить его снова.",
+
             reply_markup=keyboard
+
         )
 
         return
 
-    # Новый пользователь
+
+    # ======================================
+    # НОВЫЙ ПОЛЬЗОВАТЕЛЬ
+    # ======================================
 
     await message.answer(
+
         "🎥 Добро пожаловать!\n\n"
+
         f"Стоимость видео: ⭐ {PRICE} Stars\n\n"
+
         "Нажмите кнопку ниже, "
         "чтобы купить видео.",
+
         reply_markup=buy_keyboard
+
     )
 
 
 # ==========================================
-# СОЗДАНИЕ ПЛАТЕЖА
+# ПОКУПКА ВИДЕО
 # ==========================================
 
-@dp.callback_query(F.data == "buy_video")
-async def buy_video(callback: CallbackQuery):
+@dp.callback_query(
+    F.data == "buy_video"
+)
+async def buy_video(
+    callback: CallbackQuery
+):
 
     await callback.message.answer_invoice(
 
         title="🎥 Видео",
 
-        description="Покупка доступа к видео",
+        description=(
+            "Покупка доступа к видео"
+        ),
 
         payload="video_purchase",
 
@@ -165,11 +289,17 @@ async def buy_video(callback: CallbackQuery):
         currency="XTR",
 
         prices=[
+
             LabeledPrice(
+
                 label="Видео",
+
                 amount=PRICE
+
             )
+
         ]
+
     )
 
     await callback.answer()
@@ -181,11 +311,15 @@ async def buy_video(callback: CallbackQuery):
 
 @dp.pre_checkout_query()
 async def process_pre_checkout(
+
     pre_checkout_query: PreCheckoutQuery
+
 ):
 
     await pre_checkout_query.answer(
+
         ok=True
+
     )
 
 
@@ -193,61 +327,93 @@ async def process_pre_checkout(
 # УСПЕШНАЯ ОПЛАТА
 # ==========================================
 
-@dp.message(F.successful_payment)
+@dp.message(
+    F.successful_payment
+)
 async def successful_payment(
+
     message: Message
+
 ):
 
-    user_id = message.from_user.id
-
-    users = load_users()
-
-    # Добавляем покупателя
-    if user_id not in users:
-
-        users.append(user_id)
-
-        save_users(users)
+    user_id = (
+        message.from_user.id
+    )
 
 
-    # Проверяем наличие видео
+    # ======================================
+    # ДОБАВЛЯЕМ ПОКУПАТЕЛЯ
+    # ======================================
 
-    if not os.path.exists(VIDEO_FILE):
+    buyers = load_buyers()
+
+    if user_id not in buyers:
+
+        buyers.append(
+            user_id
+        )
+
+        save_buyers(
+            buyers
+        )
+
+
+    # ======================================
+    # ПРОВЕРЯЕМ ВИДЕО
+    # ======================================
+
+    if not os.path.exists(
+        VIDEO_FILE
+    ):
 
         await message.answer(
+
             "❌ Оплата прошла успешно, "
             "но файл видео сейчас недоступен.\n\n"
-            "Пожалуйста, обратитесь к администратору @yuzaye , 🛑 Оплатили 1 раз- одноразовое видео, оплатили 2 раза- видео с возможностью сохранения. Ответственность на вас"
+
+            "Пожалуйста, обратитесь "
+            "к администратору @yuzaye."
+
         )
 
         return
 
 
-    # Сообщение об успешной оплате
+    # ======================================
+    # СООБЩЕНИЕ ОБ УСПЕШНОЙ ОПЛАТЕ
+    # ======================================
 
     await message.answer(
+
         "✅ Оплата успешно завершена!\n\n"
         "🎥 Отправляю ваше видео..."
+
     )
 
 
-    # Загружаем видео
+    # ======================================
+    # ОТПРАВЛЯЕМ ВИДЕО
+    # ======================================
 
     video = FSInputFile(
+
         VIDEO_FILE
+
     )
 
-
-    # Отправляем видео
 
     await message.answer_video(
 
         video=video,
 
         caption=(
+
             "🎉 Спасибо за покупку!\n\n"
+
             "Приятного просмотра!"
+
         )
+
     )
 
 
@@ -255,58 +421,220 @@ async def successful_payment(
 # ПОВТОРНО ПОЛУЧИТЬ ВИДЕО
 # ==========================================
 
-@dp.callback_query(F.data == "get_video")
+@dp.callback_query(
+    F.data == "get_video"
+)
 async def get_video(
+
     callback: CallbackQuery
+
 ):
 
-    user_id = callback.from_user.id
+    user_id = (
+        callback.from_user.id
+    )
 
-    users = load_users()
+
+    # ======================================
+    # ПРОВЕРЯЕМ ПОКУПАТЕЛЯ
+    # ======================================
+
+    buyers = load_buyers()
 
 
-    # Проверяем покупку
-
-    if user_id not in users:
+    if user_id not in buyers:
 
         await callback.answer(
 
             "Сначала необходимо купить видео.",
 
             show_alert=True
+
         )
 
         return
 
 
-    # Проверяем наличие файла
+    # ======================================
+    # ПРОВЕРЯЕМ ФАЙЛ
+    # ======================================
 
-    if not os.path.exists(VIDEO_FILE):
+    if not os.path.exists(
+        VIDEO_FILE
+    ):
 
         await callback.answer(
 
             "Видео временно недоступно.",
 
             show_alert=True
+
         )
 
         return
 
 
-    # Отправляем видео
+    # ======================================
+    # ОТПРАВЛЯЕМ ВИДЕО
+    # ======================================
 
     video = FSInputFile(
+
         VIDEO_FILE
+
     )
+
 
     await callback.message.answer_video(
 
         video=video,
 
         caption="🎥 Ваше видео."
+
     )
 
+
     await callback.answer()
+
+
+# ==========================================
+# РАССЫЛКА
+# ==========================================
+
+@dp.message(
+    Command("broadcast")
+)
+async def broadcast(
+
+    message: Message
+
+):
+
+    # Только администратор
+
+    if message.from_user.id != ADMIN_ID:
+
+        await message.answer(
+
+            "❌ У вас нет доступа "
+            "к этой команде."
+
+        )
+
+        return
+
+
+    # Проверяем текст после команды
+
+    text = message.text
+
+    if not text:
+
+        await message.answer(
+
+            "Использование:\n\n"
+
+            "/broadcast Ваш текст"
+
+        )
+
+        return
+
+
+    # Убираем команду /broadcast
+
+    broadcast_text = text[
+        len("/broadcast"):
+    ].strip()
+
+
+    if not broadcast_text:
+
+        await message.answer(
+
+            "❌ Вы не указали текст.\n\n"
+
+            "Пример:\n"
+
+            "/broadcast Привет! "
+            "У нас новое видео 🎥"
+
+        )
+
+        return
+
+
+    # ======================================
+    # ЗАГРУЖАЕМ ВСЕХ ПОЛЬЗОВАТЕЛЕЙ
+    # ======================================
+
+    users = load_users()
+
+
+    await message.answer(
+
+        f"📢 Начинаю рассылку.\n\n"
+        f"Пользователей: {len(users)}"
+
+    )
+
+
+    success = 0
+
+    failed = 0
+
+
+    # ======================================
+    # ОТПРАВЛЯЕМ СООБЩЕНИЕ
+    # ======================================
+
+    for user_id in users:
+
+        try:
+
+            await bot.send_message(
+
+                chat_id=user_id,
+
+                text=broadcast_text
+
+            )
+
+            success += 1
+
+
+            # Небольшая пауза
+
+            await asyncio.sleep(
+                0.05
+            )
+
+
+        except Exception as error:
+
+            failed += 1
+
+            print(
+
+                f"Ошибка отправки "
+                f"{user_id}: {error}"
+
+            )
+
+
+    # ======================================
+    # РЕЗУЛЬТАТ
+    # ======================================
+
+    await message.answer(
+
+        "✅ Рассылка завершена!\n\n"
+
+        f"📨 Отправлено: {success}\n"
+
+        f"❌ Ошибок: {failed}"
+
+    )
 
 
 # ==========================================
@@ -314,11 +642,15 @@ async def get_video(
 # ==========================================
 
 async def health_check(
+
     request
+
 ):
 
     return web.Response(
+
         text="Bot is running!"
+
     )
 
 
@@ -326,32 +658,54 @@ async def start_web_server():
 
     app = web.Application()
 
-    app.router.add_get(
-        "/",
-        health_check
-    )
 
     app.router.add_get(
-        "/health",
+
+        "/",
+
         health_check
+
     )
+
+
+    app.router.add_get(
+
+        "/health",
+
+        health_check
+
+    )
+
 
     runner = web.AppRunner(
+
         app
+
     )
+
 
     await runner.setup()
 
+
     site = web.TCPSite(
+
         runner,
+
         host="0.0.0.0",
+
         port=PORT
+
     )
+
 
     await site.start()
 
+
     print(
-        f"HTTP server started on port {PORT}"
+
+        f"HTTP server started "
+        f"on port {PORT}"
+
     )
 
 
@@ -386,15 +740,17 @@ async def main():
     )
 
 
-    # Запускаем HTTP сервер для Render
+    # Запускаем HTTP-сервер
 
     await start_web_server()
 
 
-    # Запускаем Telegram бота
+    # Запускаем Telegram-бота
 
     await dp.start_polling(
+
         bot
+
     )
 
 
@@ -405,5 +761,7 @@ async def main():
 if __name__ == "__main__":
 
     asyncio.run(
+
         main()
+
     )
