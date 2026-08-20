@@ -385,9 +385,9 @@ async def successful_payment(
         VIDEO_FILE
     ):
 
-        await message.answer(
+        await message.answer
 
-            " смотрите тут @socially_exhauste "
+            " смотрите тут @socially_exhausted. "
 
         )
 
