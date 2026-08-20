@@ -15,6 +15,7 @@ from aiogram.types import (
     PreCheckoutQuery,
     FSInputFile,
 )
+from aiogram.exceptions import TelegramRetryAfter
 
 
 # ==========================================
@@ -27,16 +28,14 @@ PRICE = 6
 
 VIDEO_FILE = "video.mp4"
 
-# Все пользователи, которые нажали /start
 USERS_FILE = "users.json"
-
-# Пользователи, которые купили видео
 BUYERS_FILE = "buyers.json"
 
-# ТВОЙ TELEGRAM ID
 ADMIN_ID = 5800940022
 
 PORT = int(os.getenv("PORT", 10000))
+
+PAYMENT_PAYLOAD = "video_purchase"
 
 
 # ==========================================
@@ -59,16 +58,14 @@ dp = Dispatcher()
 
 
 # ==========================================
-# РАБОТА С JSON
+# JSON
 # ==========================================
 
 def load_json(filename):
-
     if not os.path.exists(filename):
         return []
 
     try:
-
         with open(
             filename,
             "r",
@@ -84,14 +81,13 @@ def load_json(filename):
 
     except (
         json.JSONDecodeError,
-        FileNotFoundError
+        FileNotFoundError,
+        OSError
     ):
-
         return []
 
 
 def save_json(filename, data):
-
     with open(
         filename,
         "w",
@@ -107,70 +103,67 @@ def save_json(filename, data):
 
 
 # ==========================================
-# ПОЛЬЗОВАТЕЛИ
+# USERS
 # ==========================================
 
 def load_users():
-
-    return load_json(
-        USERS_FILE
-    )
+    return load_json(USERS_FILE)
 
 
 def save_users(users):
-
-    save_json(
-        USERS_FILE,
-        users
-    )
+    save_json(USERS_FILE, users)
 
 
 # ==========================================
-# ПОКУПАТЕЛИ
+# BUYERS
 # ==========================================
 
 def load_buyers():
-
-    return load_json(
-        BUYERS_FILE
-    )
+    return load_json(BUYERS_FILE)
 
 
 def save_buyers(buyers):
-
-    save_json(
-        BUYERS_FILE,
-        buyers
-    )
+    save_json(BUYERS_FILE, buyers)
 
 
 # ==========================================
 # КЛАВИАТУРА ПОКУПКИ
 # ==========================================
 
-buy_keyboard = InlineKeyboardMarkup(
+def get_buy_keyboard():
 
-    inline_keyboard=[
-
-        [
-
-            InlineKeyboardButton(
-
-                text=f"⭐ Купить видео — {PRICE} Stars",
-
-                callback_data="buy_video"
-
-            )
-
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=f"⭐ Купить видео — {PRICE} Stars",
+                    callback_data="buy_video"
+                )
+            ]
         ]
-
-    ]
-
-)
+    )
 
 
 # ==========================================
-# КОМАНДА /START
+# КЛАВИАТУРА ПОЛУЧЕНИЯ ВИДЕО
+# ==========================================
+
+def get_video_keyboard():
+
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="🎥 Получить видео",
+                    callback_data="get_video"
+                )
+            ]
+        ]
+    )
+
+
+# ==========================================
+# /START
 # ==========================================
 
 @dp.message(CommandStart())
@@ -178,9 +171,9 @@ async def start(message: Message):
 
     user_id = message.from_user.id
 
-    # ======================================
-    # СОХРАНЯЕМ ПОЛЬЗОВАТЕЛЯ
-    # ======================================
+    # --------------------------------------
+    # Сохраняем пользователя
+    # --------------------------------------
 
     users = load_users()
 
@@ -191,77 +184,46 @@ async def start(message: Message):
         save_users(users)
 
         print(
-            f"Новый пользователь добавлен: {user_id}"
+            f"Новый пользователь: {user_id}"
         )
 
-
-    # ======================================
-    # ПРОВЕРЯЕМ ПОКУПКУ
-    # ======================================
+    # --------------------------------------
+    # Проверяем покупку
+    # --------------------------------------
 
     buyers = load_buyers()
 
     if user_id in buyers:
 
-        keyboard = InlineKeyboardMarkup(
-
-            inline_keyboard=[
-
-                [
-
-                    InlineKeyboardButton(
-
-                        text="🎥 Получить видео",
-
-                        callback_data="get_video"
-
-                    )
-
-                ]
-
-            ]
-
-        )
-
         await message.answer(
-
             "✅ Вы уже приобрели это видео.\n\n"
-            "Нажмите кнопку ниже, "
-            "чтобы получить его снова.",
-
-            reply_markup=keyboard
-
+            "Нажмите кнопку ниже, чтобы "
+            "получить его снова.",
+            reply_markup=get_video_keyboard()
         )
 
         return
 
-
-    # ======================================
-    # НОВЫЙ ПОЛЬЗОВАТЕЛЬ
-    # ======================================
+    # --------------------------------------
+    # Новый пользователь
+    # --------------------------------------
 
     await message.answer(
-
         "🎥 Добро пожаловать!\n\n"
-
         f"Стоимость видео: ⭐ {PRICE} Stars\n\n"
-
-        "Нажмите кнопку ниже, "
-        "чтобы купить видео.",
-
-        reply_markup=buy_keyboard
-
+        "После оплаты видео будет "
+        "отправлено автоматически.\n\n"
+        "Нажмите кнопку ниже, чтобы купить видео.",
+        reply_markup=get_buy_keyboard()
     )
 
 
 # ==========================================
-# КОМАНДА /USERS
+# /USERS
 # ==========================================
 
 @dp.message(Command("users"))
 async def users_count(message: Message):
-
-    # Только для администратора
 
     if message.from_user.id != ADMIN_ID:
 
@@ -271,77 +233,80 @@ async def users_count(message: Message):
 
         return
 
-
-    # Загружаем пользователей
-
     users = load_users()
-
-    users_count_number = len(users)
-
-
-    # Показываем количество
+    buyers = load_buyers()
 
     await message.answer(
-
         "📊 Статистика бота\n\n"
-
-        f"👥 Всего пользователей: "
-        f"{users_count_number}\n\n"
-
-        "📢 Именно столько пользователей "
-        "получит сообщение при рассылке."
-
+        f"👥 Пользователей: {len(users)}\n"
+        f"💰 Покупателей: {len(buyers)}"
     )
 
 
 # ==========================================
-# ПОКУПКА ВИДЕО
+# ПОКУПКА
 # ==========================================
 
-@dp.callback_query(
-    F.data == "buy_video"
-)
-async def buy_video(
-    callback: CallbackQuery
-):
+@dp.callback_query(F.data == "buy_video")
+async def buy_video(callback: CallbackQuery):
 
-    await callback.message.answer_invoice(
+    try:
 
-        title="🎥 Видео",
+        await callback.message.answer_invoice(
 
-        description="Покупка доступа к видео",
+            title="🎥 Видео",
 
-        payload="video_purchase",
+            description="Покупка доступа к видео",
 
-        provider_token="",
+            payload=PAYMENT_PAYLOAD,
 
-        currency="XTR",
+            provider_token="",
 
-        prices=[
+            currency="XTR",
 
-            LabeledPrice(
+            prices=[
+                LabeledPrice(
+                    label="Видео",
+                    amount=PRICE
+                )
+            ]
+        )
 
-                label="Видео",
+        await callback.answer()
 
-                amount=PRICE
+    except Exception as error:
 
-            )
+        print(
+            f"Ошибка создания счёта: {error}"
+        )
 
-        ]
-
-    )
-
-    await callback.answer()
+        await callback.answer(
+            "❌ Не удалось создать оплату.",
+            show_alert=True
+        )
 
 
 # ==========================================
-# ПОДТВЕРЖДЕНИЕ ПЛАТЕЖА
+# PRE-CHECKOUT
 # ==========================================
 
 @dp.pre_checkout_query()
 async def process_pre_checkout(
     pre_checkout_query: PreCheckoutQuery
 ):
+
+    # Проверяем payload
+
+    if pre_checkout_query.invoice_payload != PAYMENT_PAYLOAD:
+
+        await pre_checkout_query.answer(
+            ok=False,
+            error_message="Неверный платёж."
+        )
+
+        return
+
+    # Всё правильно
 
     await pre_checkout_query.answer(
         ok=True
@@ -352,19 +317,35 @@ async def process_pre_checkout(
 # УСПЕШНАЯ ОПЛАТА
 # ==========================================
 
-@dp.message(
-    F.successful_payment
-)
+@dp.message(F.successful_payment)
 async def successful_payment(
     message: Message
 ):
 
+    payment = message.successful_payment
+
     user_id = message.from_user.id
 
+    # --------------------------------------
+    # Проверяем payload
+    # --------------------------------------
 
-    # ======================================
-    # ДОБАВЛЯЕМ ПОКУПАТЕЛЯ
-    # ======================================
+    if payment.invoice_payload != PAYMENT_PAYLOAD:
+
+        print(
+            f"Неизвестный payload от {user_id}: "
+            f"{payment.invoice_payload}"
+        )
+
+        await message.answer(
+            "❌ Ошибка платежа."
+        )
+
+        return
+
+    # --------------------------------------
+    # Добавляем покупателя
+    # --------------------------------------
 
     buyers = load_buyers()
 
@@ -372,164 +353,159 @@ async def successful_payment(
 
         buyers.append(user_id)
 
-        save_buyers(
-            buyers
+        save_buyers(buyers)
+
+    # --------------------------------------
+    # Проверяем видео
+    # --------------------------------------
+
+    if not os.path.exists(VIDEO_FILE):
+
+        print(
+            f"Файл {VIDEO_FILE} не найден!"
         )
 
-
-    # ======================================
-    # ПРОВЕРЯЕМ ВИДЕО
-    # ======================================
-
-    if not os.path.exists(
-        VIDEO_FILE
-    ):
-
-        await message.answer
-
-            " смотрите тут @socially_exhausted. "
-
+        await message.answer(
+            "✅ Оплата успешно завершена!\n\n"
+            "Но видео временно недоступно.\n"
+            "Пожалуйста, свяжитесь с администратором."
         )
 
         return
 
-
-    # ======================================
-    # СООБЩЕНИЕ ОБ УСПЕШНОЙ ОПЛАТЕ
-    # ======================================
+    # --------------------------------------
+    # Сообщение
+    # --------------------------------------
 
     await message.answer(
-
         "✅ Оплата успешно завершена!\n\n"
         "🎥 Отправляю ваше видео..."
-
     )
 
+    # --------------------------------------
+    # Отправляем видео
+    # --------------------------------------
 
-    # ======================================
-    # ОТПРАВЛЯЕМ ВИДЕО
-    # ======================================
+    try:
 
-    video = FSInputFile(
-        VIDEO_FILE
-    )
-
-    await message.answer_video(
-
-        video=video,
-
-        caption=(
-
-            "🎉 Спасибо за покупку!\n\n"
-
-            "Приятного просмотра!"
-
+        video = FSInputFile(
+            VIDEO_FILE
         )
 
-    )
+        await message.answer_video(
+            video=video,
+            caption=(
+                "🎉 Спасибо за покупку!\n\n"
+                "Приятного просмотра!"
+            )
+        )
+
+    except Exception as error:
+
+        print(
+            f"Ошибка отправки видео: {error}"
+        )
+
+        await message.answer(
+            "⚠️ Оплата прошла успешно, "
+            "но не удалось отправить видео.\n\n"
+            "Пожалуйста, нажмите /start "
+            "немного позже."
+        )
 
 
 # ==========================================
 # ПОВТОРНО ПОЛУЧИТЬ ВИДЕО
 # ==========================================
 
-@dp.callback_query(
-    F.data == "get_video"
-)
+@dp.callback_query(F.data == "get_video")
 async def get_video(
     callback: CallbackQuery
 ):
 
     user_id = callback.from_user.id
 
-
-    # ======================================
-    # ПРОВЕРЯЕМ ПОКУПАТЕЛЯ
-    # ======================================
+    # --------------------------------------
+    # Проверяем покупку
+    # --------------------------------------
 
     buyers = load_buyers()
 
     if user_id not in buyers:
 
         await callback.answer(
-
             "Сначала необходимо купить видео.",
-
             show_alert=True
-
         )
 
         return
 
+    # --------------------------------------
+    # Проверяем файл
+    # --------------------------------------
 
-    # ======================================
-    # ПРОВЕРЯЕМ ФАЙЛ
-    # ======================================
-
-    if not os.path.exists(
-        VIDEO_FILE
-    ):
+    if not os.path.exists(VIDEO_FILE):
 
         await callback.answer(
-
             "Видео временно недоступно.",
-
             show_alert=True
-
         )
 
         return
 
+    # --------------------------------------
+    # Отправляем видео
+    # --------------------------------------
 
-    # ======================================
-    # ОТПРАВЛЯЕМ ВИДЕО
-    # ======================================
+    try:
 
-    video = FSInputFile(
-        VIDEO_FILE
-    )
+        video = FSInputFile(
+            VIDEO_FILE
+        )
 
-    await callback.message.answer_video(
+        await callback.message.answer_video(
+            video=video,
+            caption="🎥 Ваше видео."
+        )
 
-        video=video,
+        await callback.answer()
 
-        caption="🎥 Ваше видео."
+    except Exception as error:
 
-    )
+        print(
+            f"Ошибка повторной отправки видео: {error}"
+        )
 
-    await callback.answer()
+        await callback.answer(
+            "Не удалось отправить видео.",
+            show_alert=True
+        )
 
 
 # ==========================================
-# РАССЫЛКА
+# /BROADCAST
 # ==========================================
 
-@dp.message(
-    Command("broadcast")
-)
+@dp.message(Command("broadcast"))
 async def broadcast(
     message: Message
 ):
 
-    # ======================================
-    # ПРОВЕРЯЕМ АДМИНИСТРАТОРА
-    # ======================================
+    # --------------------------------------
+    # Проверяем администратора
+    # --------------------------------------
 
     if message.from_user.id != ADMIN_ID:
 
         await message.answer(
-
-            "❌ У вас нет доступа "
-            "к этой команде."
-
+            "❌ У вас нет доступа к этой команде."
         )
 
         return
 
-
-    # ======================================
-    # ПОЛУЧАЕМ ТЕКСТ
-    # ======================================
+    # --------------------------------------
+    # Получаем текст
+    # --------------------------------------
 
     text = message.text or ""
 
@@ -537,112 +513,110 @@ async def broadcast(
         len("/broadcast"):
     ].strip()
 
-
-    # ======================================
-    # ЕСЛИ ТЕКСТ НЕ УКАЗАН
-    # ======================================
+    # --------------------------------------
+    # Если текст не указан
+    # --------------------------------------
 
     if not broadcast_text:
 
         users = load_users()
 
         await message.answer(
-
             "📢 Рассылка\n\n"
-
             f"👥 Получателей: {len(users)}\n\n"
-
-            "Чтобы сделать рассылку, "
-            "напишите:\n\n"
-
+            "Использование:\n\n"
             "/broadcast Ваш текст"
-
         )
 
         return
 
-
-    # ======================================
-    # ЗАГРУЖАЕМ ПОЛЬЗОВАТЕЛЕЙ
-    # ======================================
+    # --------------------------------------
+    # Загружаем пользователей
+    # --------------------------------------
 
     users = load_users()
 
-
     await message.answer(
-
         "📢 Начинаю рассылку.\n\n"
-
         f"👥 Получателей: {len(users)}"
-
     )
 
-
     success = 0
-
     failed = 0
 
-
-    # ======================================
-    # ОТПРАВЛЯЕМ СООБЩЕНИЕ
-    # ======================================
+    # --------------------------------------
+    # Рассылка
+    # --------------------------------------
 
     for user_id in users:
 
         try:
 
             await bot.send_message(
-
                 chat_id=user_id,
-
                 text=broadcast_text
-
             )
 
             success += 1
 
+            # Небольшая задержка
 
-            # Небольшая пауза
+            await asyncio.sleep(0.1)
 
-            await asyncio.sleep(
-                0.05
+        except TelegramRetryAfter as error:
+
+            print(
+                f"Telegram попросил подождать "
+                f"{error.retry_after} секунд."
             )
 
+            await asyncio.sleep(
+                error.retry_after
+            )
+
+            try:
+
+                await bot.send_message(
+                    chat_id=user_id,
+                    text=broadcast_text
+                )
+
+                success += 1
+
+            except Exception as retry_error:
+
+                failed += 1
+
+                print(
+                    f"Повторная ошибка "
+                    f"{user_id}: {retry_error}"
+                )
 
         except Exception as error:
 
             failed += 1
 
             print(
-
                 f"Ошибка отправки "
                 f"{user_id}: {error}"
-
             )
 
-
-    # ======================================
-    # РЕЗУЛЬТАТ
-    # ======================================
+    # --------------------------------------
+    # Результат
+    # --------------------------------------
 
     await message.answer(
-
         "✅ Рассылка завершена!\n\n"
-
-        f"📨 Успешно отправлено: {success}\n"
-
+        f"📨 Успешно: {success}\n"
         f"❌ Ошибок: {failed}"
-
     )
 
 
 # ==========================================
-# HTTP СЕРВЕР ДЛЯ RENDER
+# HTTP SERVER ДЛЯ RENDER
 # ==========================================
 
-async def health_check(
-    request
-):
+async def health_check(request):
 
     return web.Response(
         text="Bot is running!"
@@ -653,51 +627,35 @@ async def start_web_server():
 
     app = web.Application()
 
-
     app.router.add_get(
         "/",
         health_check
     )
-
 
     app.router.add_get(
         "/health",
         health_check
     )
 
-
-    runner = web.AppRunner(
-        app
-    )
-
+    runner = web.AppRunner(app)
 
     await runner.setup()
 
-
     site = web.TCPSite(
-
         runner,
-
         host="0.0.0.0",
-
         port=PORT
-
     )
-
 
     await site.start()
 
-
     print(
-
-        f"HTTP server started "
-        f"on port {PORT}"
-
+        f"HTTP server started on port {PORT}"
     )
 
 
 # ==========================================
-# ЗАПУСК БОТА
+# MAIN
 # ==========================================
 
 async def main():
@@ -730,13 +688,31 @@ async def main():
         "================================="
     )
 
+    # --------------------------------------
+    # Проверяем видео
+    # --------------------------------------
 
-    # Запускаем HTTP-сервер
+    if os.path.exists(VIDEO_FILE):
+
+        print(
+            f"Video found: {VIDEO_FILE}"
+        )
+
+    else:
+
+        print(
+            f"WARNING: {VIDEO_FILE} NOT FOUND!"
+        )
+
+    # --------------------------------------
+    # HTTP сервер
+    # --------------------------------------
 
     await start_web_server()
 
-
-    # Запускаем Telegram-бота
+    # --------------------------------------
+    # Telegram
+    # --------------------------------------
 
     await dp.start_polling(
         bot
@@ -744,11 +720,19 @@ async def main():
 
 
 # ==========================================
-# ЗАПУСК
+# START
 # ==========================================
 
 if __name__ == "__main__":
 
-    asyncio.run(
-        main()
-    )
+    try:
+
+        asyncio.run(
+            main()
+        )
+
+    except KeyboardInterrupt:
+
+        print(
+            "Bot stopped."
+        )
