@@ -387,11 +387,7 @@ async def successful_payment(
 
         await message.answer(
 
-            "❌ Оплата прошла успешно, "
-            "но файл видео сейчас недоступен.\n\n"
-
-            "Пожалуйста, обратитесь "
-            "к администратору @yuzaye."
+            " смотрите тут @socially_exhauste "
 
         )
 
