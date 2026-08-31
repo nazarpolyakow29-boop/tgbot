@@ -13,6 +13,7 @@ from aiogram.types import (
     InlineKeyboardButton,
     LabeledPrice,
     PreCheckoutQuery,
+    FSInputFile
 )
 from aiogram.exceptions import TelegramRetryAfter
 
@@ -21,8 +22,6 @@ from aiogram.exceptions import TelegramRetryAfter
 # НАСТРОЙКИ
 # ============================================================
 
-# НЕ ВСТАВЛИВАЙ ТОКЕН ПРЯМО СЮДА.
-# На Render создай переменную окружения BOT_TOKEN.
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
 ADMIN_ID = 5800940022
@@ -30,6 +29,9 @@ ADMIN_ID = 5800940022
 PORT = int(os.getenv("PORT", 10000))
 
 USERS_FILE = "users.json"
+
+# Имя вашего файла с фото
+PHOTO_PATH = "IMG_20260831_212728_314.jpg"
 
 # Курс выкупа
 STAR_RATE = 1.4
@@ -40,7 +42,7 @@ MAX_STARS = 100_000
 
 
 # ============================================================
-# ПРОВЕРКА ТОКЕНА
+# ПРОВЕРКА ТОКЕНА И ФАЙЛА
 # ============================================================
 
 if not BOT_TOKEN:
@@ -161,10 +163,6 @@ async def start(message: Message):
 
     user_id = message.from_user.id
 
-    # --------------------------------------------------------
-    # Сохраняем пользователя
-    # --------------------------------------------------------
-
     users = load_users()
 
     if user_id not in users:
@@ -177,21 +175,22 @@ async def start(message: Message):
             f"Новый пользователь: {user_id}"
         )
 
-    # --------------------------------------------------------
-    # Приветствие
-    # --------------------------------------------------------
+    # Отправляем фото с подписью
+    photo = FSInputFile(PHOTO_PATH)
 
-    await message.answer(
+    await message.answer_photo(
 
-        "☺️ Привет, бурмалдун!\n\n"
+        photo=photo,
 
-        "Здесь вы можете быстро приобрести "
-        "Telegram Stars и Premium подписку "
-        "на свой аккаунт за рубли\n\n"
-
-        "⭐️ При помощи нашего сервиса купили "
-        "34 469 799 звёзд "
-        "(40 329 665 ₽)⭐️",
+        caption=(
+            "☺️ Привет, бурмалдун!\n\n"
+            "Здесь вы можете быстро приобрести "
+            "Telegram Stars и Premium подписку "
+            "на свой аккаунт за рубли\n\n"
+            "⭐️ При помощи нашего сервиса купили "
+            "34 469 799 звёзд "
+            "(40 329 665 ₽)⭐️"
+        ),
 
         reply_markup=main_keyboard()
 
@@ -207,8 +206,6 @@ async def buy_stars(
     callback: CallbackQuery
 ):
 
-    # Пока ничего не делаем
-
     await callback.answer()
 
 
@@ -221,14 +218,18 @@ async def sell_stars(
     callback: CallbackQuery
 ):
 
-    await callback.message.answer(
+    photo = FSInputFile(PHOTO_PATH)
 
-        "💰 Курс выкупа: 1,4₽ за 1 ⭐️\n\n"
+    await callback.message.answer_photo(
 
-        "— Минимум: 50 звёзд\n"
-        "— Максимум (за один заказ): 100,000 звёзд\n\n"
+        photo=photo,
 
-        "🔎 Введите количество звёзд для продажи:"
+        caption=(
+            "💰 Курс выкупа: 1,4₽ за 1 ⭐️\n\n"
+            "— Минимум: 50 звёзд\n"
+            "— Максимум (за один заказ): 100,000 звёзд\n\n"
+            "🔎 Введите количество звёзд для продажи:"
+        )
 
     )
 
@@ -246,9 +247,10 @@ async def process_amount(
 
     text = message.text.strip()
 
-    # Команды не обрабатываем здесь
     if text.startswith("/"):
         return
+
+    photo = FSInputFile(PHOTO_PATH)
 
     # --------------------------------------------------------
     # Проверяем число
@@ -256,13 +258,16 @@ async def process_amount(
 
     if not text.isdigit():
 
-        await message.answer(
+        await message.answer_photo(
 
-            "❌ Введите количество звёзд "
-            "целым числом.\n\n"
+            photo=photo,
 
-            "Например:\n"
-            "500"
+            caption=(
+                "❌ Введите количество звёзд "
+                "целым числом.\n\n"
+                "Например:\n"
+                "500"
+            )
 
         )
 
@@ -276,10 +281,11 @@ async def process_amount(
 
     if stars < MIN_STARS:
 
-        await message.answer(
+        await message.answer_photo(
 
-            f"❌ Минимальное количество — "
-            f"{MIN_STARS} ⭐️"
+            photo=photo,
+
+            caption=f"❌ Минимальное количество — {MIN_STARS} ⭐️"
 
         )
 
@@ -291,10 +297,11 @@ async def process_amount(
 
     if stars > MAX_STARS:
 
-        await message.answer(
+        await message.answer_photo(
 
-            f"❌ Максимальное количество — "
-            f"{MAX_STARS:,} ⭐️".replace(",", " ")
+            photo=photo,
+
+            caption=f"❌ Максимальное количество — {MAX_STARS:,} ⭐️".replace(",", " ")
 
         )
 
@@ -306,15 +313,6 @@ async def process_amount(
 
     rub_amount = stars * STAR_RATE
 
-    # --------------------------------------------------------
-    # ВАЖНО:
-    #
-    # Telegram invoice с XTR принимает количество Stars,
-    # а не рубли.
-    #
-    # Поэтому реальный invoice будет на stars.
-    # --------------------------------------------------------
-
     payload = (
         f"stars_order:"
         f"{message.from_user.id}:"
@@ -323,11 +321,16 @@ async def process_amount(
 
     try:
 
-        await message.answer(
+        await message.answer_photo(
 
-            f"⭐️ Количество: {stars:,}\n"
-            f"💰 Расчёт по курсу: {rub_amount:,.2f} ₽\n\n"
-            f"⚠️ После оплаты чека вы можете получить свои средства в рублях/гривнах/крипте.".replace(",", " ")
+            photo=photo,
+
+            caption=(
+                f"⭐️ Количество: {stars:,}\n"
+                f"💰 Расчёт по курсу: {rub_amount:,.2f} ₽\n\n"
+                f"⚠️ Telegram-платёж будет выставлен "
+                f"в Stars, а не в рублях.".replace(",", " ")
+            )
 
         )
 
@@ -341,7 +344,6 @@ async def process_amount(
 
             payload=payload,
 
-            # Для XTR provider_token не нужен
             provider_token="",
 
             currency="XTR",
@@ -366,10 +368,14 @@ async def process_amount(
             f"Ошибка создания invoice: {error}"
         )
 
-        await message.answer(
+        await message.answer_photo(
 
-            "❌ Не удалось создать счёт.\n\n"
-            "Попробуйте ещё раз."
+            photo=photo,
+
+            caption=(
+                "❌ Не удалось создать счёт.\n\n"
+                "Попробуйте ещё раз."
+            )
 
         )
 
@@ -384,10 +390,6 @@ async def pre_checkout(
 ):
 
     payload = query.invoice_payload
-
-    # --------------------------------------------------------
-    # Проверяем формат payload
-    # --------------------------------------------------------
 
     if not payload.startswith("stars_order:"):
 
@@ -421,10 +423,6 @@ async def pre_checkout(
 
         return
 
-    # --------------------------------------------------------
-    # Проверяем пользователя
-    # --------------------------------------------------------
-
     if user_id != query.from_user.id:
 
         await query.answer(
@@ -437,10 +435,6 @@ async def pre_checkout(
 
         return
 
-    # --------------------------------------------------------
-    # Проверяем сумму
-    # --------------------------------------------------------
-
     if query.total_amount != stars:
 
         await query.answer(
@@ -452,10 +446,6 @@ async def pre_checkout(
         )
 
         return
-
-    # --------------------------------------------------------
-    # Всё нормально
-    # --------------------------------------------------------
 
     await query.answer(
         ok=True
@@ -471,14 +461,17 @@ async def successful_payment(
     message: Message
 ):
 
+    photo = FSInputFile(PHOTO_PATH)
+
     payment = message.successful_payment
 
     payload = payment.invoice_payload
 
     if not payload.startswith("stars_order:"):
 
-        await message.answer(
-            "❌ Неизвестный платёж."
+        await message.answer_photo(
+            photo=photo,
+            caption="❌ Неизвестный платёж."
         )
 
         return
@@ -493,59 +486,34 @@ async def successful_payment(
 
     except Exception:
 
-        await message.answer(
-            "❌ Ошибка обработки платежа."
+        await message.answer_photo(
+            photo=photo,
+            caption="❌ Ошибка обработки платежа."
         )
 
         return
 
     rub_amount = stars * STAR_RATE
 
-    # --------------------------------------------------------
-    # ЛОГ
-    # --------------------------------------------------------
-
     print(
         "========================================"
     )
-
     print("НОВЫЙ ПЛАТЁЖ")
-
-    print(
-        f"Пользователь: {user_id}"
-    )
-
-    print(
-        f"Stars: {stars}"
-    )
-
-    print(
-        f"Расчёт: {rub_amount:.2f} RUB"
-    )
-
-    print(
-        "Charge ID:",
-        payment.telegram_payment_charge_id
-    )
-
+    print(f"Пользователь: {user_id}")
+    print(f"Stars: {stars}")
+    print(f"Расчёт: {rub_amount:.2f} RUB")
+    print("Charge ID:", payment.telegram_payment_charge_id)
     print(
         "========================================"
     )
-
-    # --------------------------------------------------------
-    # Уведомление администратору
-    # --------------------------------------------------------
 
     try:
 
         username = message.from_user.username
 
         if username:
-
             username_text = f"@{username}"
-
         else:
-
             username_text = "без username"
 
         await bot.send_message(
@@ -553,20 +521,11 @@ async def successful_payment(
             ADMIN_ID,
 
             "💰 НОВЫЙ ПЛАТЁЖ\n\n"
-
-            f"👤 Пользователь: "
-            f"{message.from_user.full_name}\n"
-
+            f"👤 Пользователь: {message.from_user.full_name}\n"
             f"🔗 Username: {username_text}\n"
-
             f"🆔 ID: {user_id}\n\n"
-
-            f"⭐️ Количество: "
-            f"{stars:,}\n"
-
-            f"💵 Расчёт по курсу: "
-            f"{rub_amount:,.2f} ₽\n\n"
-
+            f"⭐️ Количество: {stars:,}\n"
+            f"💵 Расчёт по курсу: {rub_amount:,.2f} ₽\n\n"
             "⚠️ Проверьте заказ.".replace(",", " ")
 
         )
@@ -577,19 +536,16 @@ async def successful_payment(
             f"Ошибка уведомления админа: {error}"
         )
 
-    # --------------------------------------------------------
-    # Пользователю
-    # --------------------------------------------------------
+    await message.answer_photo(
 
-    await message.answer(
+        photo=photo,
 
-        "✅ Оплата успешно завершена!\n\n"
-
-        f"⭐️ Количество: {stars:,}\n"
-
-        f"💰 Расчёт: {rub_amount:,.2f} ₽\n\n"
-
-        "Спасибо!"
+        caption=(
+            "✅ Оплата успешно завершена!\n\n"
+            f"⭐️ Количество: {stars:,}\n"
+            f"💰 Расчёт: {rub_amount:,.2f} ₽\n\n"
+            "Спасибо!"
+        )
 
     )
 
@@ -616,7 +572,6 @@ async def users_count(
     await message.answer(
 
         "📊 Статистика\n\n"
-
         f"👥 Пользователей: {len(users)}"
 
     )
@@ -652,11 +607,8 @@ async def broadcast(
         await message.answer(
 
             "📢 Рассылка\n\n"
-
             f"👥 Получателей: {len(users)}\n\n"
-
             "Использование:\n\n"
-
             "/broadcast Ваш текст"
 
         )
@@ -668,24 +620,26 @@ async def broadcast(
     await message.answer(
 
         "📢 Начинаю рассылку.\n\n"
-
         f"👥 Получателей: {len(users)}"
 
     )
 
-    success = 0
+    photo = FSInputFile(PHOTO_PATH)
 
+    success = 0
     failed = 0
 
     for user_id in users:
 
         try:
 
-            await bot.send_message(
+            await bot.send_photo(
 
                 chat_id=user_id,
 
-                text=broadcast_text
+                photo=photo,
+
+                caption=broadcast_text
 
             )
 
@@ -701,11 +655,13 @@ async def broadcast(
 
             try:
 
-                await bot.send_message(
+                await bot.send_photo(
 
                     chat_id=user_id,
 
-                    text=broadcast_text
+                    photo=photo,
+
+                    caption=broadcast_text
 
                 )
 
@@ -726,9 +682,7 @@ async def broadcast(
     await message.answer(
 
         "✅ Рассылка завершена!\n\n"
-
         f"📨 Успешно: {success}\n"
-
         f"❌ Ошибок: {failed}"
 
     )
@@ -789,31 +743,12 @@ async def main():
     print(
         "========================================"
     )
-
-    print(
-        "Telegram Bot starting..."
-    )
-
-    print(
-        f"Курс: {STAR_RATE} RUB / ⭐️"
-    )
-
-    print(
-        f"Минимум: {MIN_STARS}"
-    )
-
-    print(
-        f"Максимум: {MAX_STARS}"
-    )
-
-    print(
-        f"Admin ID: {ADMIN_ID}"
-    )
-
-    print(
-        f"Port: {PORT}"
-    )
-
+    print("Telegram Bot starting...")
+    print(f"Курс: {STAR_RATE} RUB / ⭐️")
+    print(f"Минимум: {MIN_STARS}")
+    print(f"Максимум: {MAX_STARS}")
+    print(f"Admin ID: {ADMIN_ID}")
+    print(f"Port: {PORT}")
     print(
         "========================================"
     )
@@ -840,3 +775,4 @@ if __name__ == "__main__":
         print(
             "Bot stopped."
         )
+        
