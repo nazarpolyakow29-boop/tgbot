@@ -17,59 +17,51 @@ from aiogram.types import (
 from aiogram.exceptions import TelegramRetryAfter
 
 
-# ==========================================
+# ============================================================
 # НАСТРОЙКИ
-# ==========================================
+# ============================================================
 
+# НЕ ВСТАВЛИВАЙ ТОКЕН ПРЯМО СЮДА.
+# На Render создай переменную окружения BOT_TOKEN.
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
-# Цена в Telegram Stars
-PRICE = 6
-
-# Файлы с пользователями и покупателями
-USERS_FILE = "users.json"
-BUYERS_FILE = "buyers.json"
-
-# Telegram ID администратора
 ADMIN_ID = 5800940022
 
-# Порт для Render
 PORT = int(os.getenv("PORT", 10000))
 
-# Payload платежа
-PAYMENT_PAYLOAD = "socially_exhausted_purchase"
+USERS_FILE = "users.json"
 
-# Текст, который получает покупатель после оплаты
-ACCESS_TEXT = (
-    "✅ Оплата успешно завершена!\n\n"
-    "🎉 Спасибо за покупку!\n\n"
-    "🔗 Ваш доступ:\n"
-    "@socially_exhausted"
-)
+# Курс выкупа
+STAR_RATE = 1.4
+
+# Лимиты
+MIN_STARS = 50
+MAX_STARS = 100_000
 
 
-# ==========================================
-# ПРОВЕРКА BOT TOKEN
-# ==========================================
+# ============================================================
+# ПРОВЕРКА ТОКЕНА
+# ============================================================
 
 if not BOT_TOKEN:
     raise ValueError(
-        "Ошибка: переменная окружения BOT_TOKEN не найдена!"
+        "BOT_TOKEN не найден. "
+        "Добавь BOT_TOKEN в Environment Variables."
     )
 
 
-# ==========================================
-# СОЗДАНИЕ БОТА
-# ==========================================
+# ============================================================
+# БОТ
+# ============================================================
 
 bot = Bot(token=BOT_TOKEN)
 
 dp = Dispatcher()
 
 
-# ==========================================
-# РАБОТА С JSON
-# ==========================================
+# ============================================================
+# JSON
+# ============================================================
 
 def load_json(filename):
 
@@ -116,10 +108,6 @@ def save_json(filename, data):
         )
 
 
-# ==========================================
-# USERS
-# ==========================================
-
 def load_users():
 
     return load_json(
@@ -135,45 +123,28 @@ def save_users(users):
     )
 
 
-# ==========================================
-# BUYERS
-# ==========================================
+# ============================================================
+# ГЛАВНОЕ МЕНЮ
+# ============================================================
 
-def load_buyers():
-
-    return load_json(
-        BUYERS_FILE
-    )
-
-
-def save_buyers(buyers):
-
-    save_json(
-        BUYERS_FILE,
-        buyers
-    )
-
-
-# ==========================================
-# КНОПКА ПОКУПКИ
-# ==========================================
-
-def get_buy_keyboard():
+def main_keyboard():
 
     return InlineKeyboardMarkup(
 
         inline_keyboard=[
 
             [
-
                 InlineKeyboardButton(
-
-                    text=f"⭐ Купить доступ — {PRICE} Stars",
-
-                    callback_data="buy_access"
-
+                    text="⭐️ Купить звёзды",
+                    callback_data="buy_stars"
                 )
+            ],
 
+            [
+                InlineKeyboardButton(
+                    text="💰 Продажа звёзд",
+                    callback_data="sell_stars"
+                )
             ]
 
         ]
@@ -181,45 +152,18 @@ def get_buy_keyboard():
     )
 
 
-# ==========================================
-# КНОПКА ПОЛУЧЕНИЯ ДОСТУПА
-# ==========================================
-
-def get_access_keyboard():
-
-    return InlineKeyboardMarkup(
-
-        inline_keyboard=[
-
-            [
-
-                InlineKeyboardButton(
-
-                    text="🔗 Получить доступ",
-
-                    callback_data="get_access"
-
-                )
-
-            ]
-
-        ]
-
-    )
-
-
-# ==========================================
+# ============================================================
 # /START
-# ==========================================
+# ============================================================
 
 @dp.message(CommandStart())
 async def start(message: Message):
 
     user_id = message.from_user.id
 
-    # --------------------------------------
-    # СОХРАНЯЕМ ПОЛЬЗОВАТЕЛЯ
-    # --------------------------------------
+    # --------------------------------------------------------
+    # Сохраняем пользователя
+    # --------------------------------------------------------
 
     users = load_users()
 
@@ -233,100 +177,172 @@ async def start(message: Message):
             f"Новый пользователь: {user_id}"
         )
 
-    # --------------------------------------
-    # ПРОВЕРЯЕМ ПОКУПКУ
-    # --------------------------------------
-
-    buyers = load_buyers()
-
-    if user_id in buyers:
-
-        await message.answer(
-
-            "✅ Вы уже приобрели доступ.\n\n"
-            "Нажмите кнопку ниже, чтобы "
-            "получить его снова.",
-
-            reply_markup=get_access_keyboard()
-
-        )
-
-        return
-
-    # --------------------------------------
-    # НОВЫЙ ПОЛЬЗОВАТЕЛЬ
-    # --------------------------------------
+    # --------------------------------------------------------
+    # Приветствие
+    # --------------------------------------------------------
 
     await message.answer(
 
-        "👋 Добро пожаловать!\n\n"
+        "☺️ Привет, бурмалдун!\n\n"
 
-        f"🔐 Доступ к материалу: ⭐ {PRICE} Stars\n\n"
+        "Здесь вы можете быстро приобрести "
+        "Telegram Stars и Premium подписку "
+        "на свой аккаунт за рубли\n\n"
 
-        "После оплаты вы получите доступ "
-        "автоматически.\n\n"
+        "⭐️ При помощи нашего сервиса купили "
+        "34 469 799 звёзд "
+        "(40 329 665 ₽)⭐️",
 
-        "Нажмите кнопку ниже для покупки.",
-
-        reply_markup=get_buy_keyboard()
+        reply_markup=main_keyboard()
 
     )
 
 
-# ==========================================
-# /USERS
-# ==========================================
+# ============================================================
+# КНОПКА "КУПИТЬ ЗВЁЗДЫ"
+# ============================================================
 
-@dp.message(Command("users"))
-async def users_count(message: Message):
-
-    # Только администратор
-
-    if message.from_user.id != ADMIN_ID:
-
-        await message.answer(
-            "❌ У вас нет доступа к этой команде."
-        )
-
-        return
-
-    users = load_users()
-
-    buyers = load_buyers()
-
-    await message.answer(
-
-        "📊 Статистика бота\n\n"
-
-        f"👥 Всего пользователей: {len(users)}\n"
-
-        f"💰 Покупателей: {len(buyers)}"
-
-    )
-
-
-# ==========================================
-# ПОКУПКА
-# ==========================================
-
-@dp.callback_query(F.data == "buy_access")
-async def buy_access(
+@dp.callback_query(F.data == "buy_stars")
+async def buy_stars(
     callback: CallbackQuery
 ):
 
+    # Пока ничего не делаем
+
+    await callback.answer()
+
+
+# ============================================================
+# КНОПКА "ПРОДАЖА ЗВЁЗД"
+# ============================================================
+
+@dp.callback_query(F.data == "sell_stars")
+async def sell_stars(
+    callback: CallbackQuery
+):
+
+    await callback.message.answer(
+
+        "💰 Курс выкупа: 1,4₽ за 1 ⭐️\n\n"
+
+        "— Минимум: 50 звёзд\n"
+        "— Максимум (за один заказ): 100,000 звёзд\n\n"
+
+        "🔎 Введите количество звёзд для продажи:"
+
+    )
+
+    await callback.answer()
+
+
+# ============================================================
+# ОБРАБОТКА ВВОДА КОЛИЧЕСТВА
+# ============================================================
+
+@dp.message(F.text)
+async def process_amount(
+    message: Message
+):
+
+    text = message.text.strip()
+
+    # Команды не обрабатываем здесь
+    if text.startswith("/"):
+        return
+
+    # --------------------------------------------------------
+    # Проверяем число
+    # --------------------------------------------------------
+
+    if not text.isdigit():
+
+        await message.answer(
+
+            "❌ Введите количество звёзд "
+            "целым числом.\n\n"
+
+            "Например:\n"
+            "500"
+
+        )
+
+        return
+
+    stars = int(text)
+
+    # --------------------------------------------------------
+    # Минимум
+    # --------------------------------------------------------
+
+    if stars < MIN_STARS:
+
+        await message.answer(
+
+            f"❌ Минимальное количество — "
+            f"{MIN_STARS} ⭐️"
+
+        )
+
+        return
+
+    # --------------------------------------------------------
+    # Максимум
+    # --------------------------------------------------------
+
+    if stars > MAX_STARS:
+
+        await message.answer(
+
+            f"❌ Максимальное количество — "
+            f"{MAX_STARS:,} ⭐️".replace(",", " ")
+
+        )
+
+        return
+
+    # --------------------------------------------------------
+    # Расчёт
+    # --------------------------------------------------------
+
+    rub_amount = stars * STAR_RATE
+
+    # --------------------------------------------------------
+    # ВАЖНО:
+    #
+    # Telegram invoice с XTR принимает количество Stars,
+    # а не рубли.
+    #
+    # Поэтому реальный invoice будет на stars.
+    # --------------------------------------------------------
+
+    payload = (
+        f"stars_order:"
+        f"{message.from_user.id}:"
+        f"{stars}"
+    )
+
     try:
 
-        await callback.message.answer_invoice(
+        await message.answer(
 
-            title="🔐 Доступ",
+            f"⭐️ Количество: {stars:,}\n"
+            f"💰 Расчёт по курсу: {rub_amount:,.2f} ₽\n\n"
+            f"⚠️ Telegram-платёж будет выставлен "
+            f"в Stars, а не в рублях.".replace(",", " ")
+
+        )
+
+        await message.answer_invoice(
+
+            title="⭐️ Telegram Stars",
 
             description=(
-                "Покупка доступа к материалу"
-            ),
+                f"Оплата за {stars:,} Telegram Stars"
+            ).replace(",", " "),
 
-            payload=PAYMENT_PAYLOAD,
+            payload=payload,
 
-            # Для Telegram Stars оставляем пустым
+            # Для XTR provider_token не нужен
             provider_token="",
 
             currency="XTR",
@@ -335,9 +351,9 @@ async def buy_access(
 
                 LabeledPrice(
 
-                    label="Доступ",
+                    label=f"{stars:,} Stars".replace(",", " "),
 
-                    amount=PRICE
+                    amount=stars
 
                 )
 
@@ -345,59 +361,111 @@ async def buy_access(
 
         )
 
-        await callback.answer()
-
     except Exception as error:
 
         print(
-            f"Ошибка создания счёта: {error}"
+            f"Ошибка создания invoice: {error}"
         )
 
-        await callback.answer(
+        await message.answer(
 
-            "❌ Не удалось создать оплату.",
-
-            show_alert=True
+            "❌ Не удалось создать счёт.\n\n"
+            "Попробуйте ещё раз."
 
         )
 
 
-# ==========================================
+# ============================================================
 # PRE-CHECKOUT
-# ==========================================
+# ============================================================
 
 @dp.pre_checkout_query()
-async def process_pre_checkout(
-    pre_checkout_query: PreCheckoutQuery
+async def pre_checkout(
+    query: PreCheckoutQuery
 ):
 
-    # Проверяем payload
+    payload = query.invoice_payload
 
-    if (
-        pre_checkout_query.invoice_payload
-        != PAYMENT_PAYLOAD
-    ):
+    # --------------------------------------------------------
+    # Проверяем формат payload
+    # --------------------------------------------------------
 
-        await pre_checkout_query.answer(
+    if not payload.startswith("stars_order:"):
+
+        await query.answer(
 
             ok=False,
 
-            error_message="Неверный платёж."
+            error_message="Неверный заказ."
 
         )
 
         return
 
-    # Подтверждаем платёж
+    try:
 
-    await pre_checkout_query.answer(
+        parts = payload.split(":")
+
+        user_id = int(parts[1])
+
+        stars = int(parts[2])
+
+    except Exception:
+
+        await query.answer(
+
+            ok=False,
+
+            error_message="Ошибка заказа."
+
+        )
+
+        return
+
+    # --------------------------------------------------------
+    # Проверяем пользователя
+    # --------------------------------------------------------
+
+    if user_id != query.from_user.id:
+
+        await query.answer(
+
+            ok=False,
+
+            error_message="Этот счёт предназначен другому пользователю."
+
+        )
+
+        return
+
+    # --------------------------------------------------------
+    # Проверяем сумму
+    # --------------------------------------------------------
+
+    if query.total_amount != stars:
+
+        await query.answer(
+
+            ok=False,
+
+            error_message="Неверная сумма."
+
+        )
+
+        return
+
+    # --------------------------------------------------------
+    # Всё нормально
+    # --------------------------------------------------------
+
+    await query.answer(
         ok=True
     )
 
 
-# ==========================================
+# ============================================================
 # УСПЕШНАЯ ОПЛАТА
-# ==========================================
+# ============================================================
 
 @dp.message(F.successful_payment)
 async def successful_payment(
@@ -406,133 +474,177 @@ async def successful_payment(
 
     payment = message.successful_payment
 
-    user_id = message.from_user.id
+    payload = payment.invoice_payload
 
-    # --------------------------------------
-    # ПРОВЕРЯЕМ PAYLOAD
-    # --------------------------------------
-
-    if payment.invoice_payload != PAYMENT_PAYLOAD:
-
-        print(
-
-            f"Неизвестный payload "
-            f"от пользователя {user_id}: "
-            f"{payment.invoice_payload}"
-
-        )
+    if not payload.startswith("stars_order:"):
 
         await message.answer(
-            "❌ Ошибка платежа."
+            "❌ Неизвестный платёж."
         )
 
         return
 
-    # --------------------------------------
-    # ДОБАВЛЯЕМ ПОКУПАТЕЛЯ
-    # --------------------------------------
+    try:
 
-    buyers = load_buyers()
+        parts = payload.split(":")
 
-    if user_id not in buyers:
+        user_id = int(parts[1])
 
-        buyers.append(user_id)
+        stars = int(parts[2])
 
-        save_buyers(
-            buyers
+    except Exception:
+
+        await message.answer(
+            "❌ Ошибка обработки платежа."
         )
+
+        return
+
+    rub_amount = stars * STAR_RATE
+
+    # --------------------------------------------------------
+    # ЛОГ
+    # --------------------------------------------------------
+
+    print(
+        "========================================"
+    )
+
+    print("НОВЫЙ ПЛАТЁЖ")
+
+    print(
+        f"Пользователь: {user_id}"
+    )
+
+    print(
+        f"Stars: {stars}"
+    )
+
+    print(
+        f"Расчёт: {rub_amount:.2f} RUB"
+    )
+
+    print(
+        "Charge ID:",
+        payment.telegram_payment_charge_id
+    )
+
+    print(
+        "========================================"
+    )
+
+    # --------------------------------------------------------
+    # Уведомление администратору
+    # --------------------------------------------------------
+
+    try:
+
+        username = message.from_user.username
+
+        if username:
+
+            username_text = f"@{username}"
+
+        else:
+
+            username_text = "без username"
+
+        await bot.send_message(
+
+            ADMIN_ID,
+
+            "💰 НОВЫЙ ПЛАТЁЖ\n\n"
+
+            f"👤 Пользователь: "
+            f"{message.from_user.full_name}\n"
+
+            f"🔗 Username: {username_text}\n"
+
+            f"🆔 ID: {user_id}\n\n"
+
+            f"⭐️ Количество: "
+            f"{stars:,}\n"
+
+            f"💵 Расчёт по курсу: "
+            f"{rub_amount:,.2f} ₽\n\n"
+
+            "⚠️ Проверьте заказ.".replace(",", " ")
+
+        )
+
+    except Exception as error:
 
         print(
-            f"Новый покупатель: {user_id}"
+            f"Ошибка уведомления админа: {error}"
         )
 
-    # --------------------------------------
-    # ОТПРАВЛЯЕМ ТЕКСТ
-    # --------------------------------------
+    # --------------------------------------------------------
+    # Пользователю
+    # --------------------------------------------------------
 
     await message.answer(
-        ACCESS_TEXT,
-        reply_markup=get_access_keyboard()
+
+        "✅ Оплата успешно завершена!\n\n"
+
+        f"⭐️ Количество: {stars:,}\n"
+
+        f"💰 Расчёт: {rub_amount:,.2f} ₽\n\n"
+
+        "Спасибо!"
+
     )
 
 
-# ==========================================
-# ПОВТОРНО ПОЛУЧИТЬ ДОСТУП
-# ==========================================
+# ============================================================
+# /USERS
+# ============================================================
 
-@dp.callback_query(F.data == "get_access")
-async def get_access(
-    callback: CallbackQuery
+@dp.message(Command("users"))
+async def users_count(
+    message: Message
 ):
 
-    user_id = callback.from_user.id
+    if message.from_user.id != ADMIN_ID:
 
-    # --------------------------------------
-    # ПРОВЕРЯЕМ ПОКУПКУ
-    # --------------------------------------
-
-    buyers = load_buyers()
-
-    if user_id not in buyers:
-
-        await callback.answer(
-
-            "Сначала необходимо купить доступ.",
-
-            show_alert=True
-
+        await message.answer(
+            "❌ У вас нет доступа."
         )
 
         return
 
-    # --------------------------------------
-    # ОТПРАВЛЯЕМ ТЕКСТ
-    # --------------------------------------
+    users = load_users()
 
-    await callback.message.answer(
-        ACCESS_TEXT
+    await message.answer(
+
+        "📊 Статистика\n\n"
+
+        f"👥 Пользователей: {len(users)}"
+
     )
 
-    await callback.answer()
 
-
-# ==========================================
+# ============================================================
 # /BROADCAST
-# ==========================================
+# ============================================================
 
 @dp.message(Command("broadcast"))
 async def broadcast(
     message: Message
 ):
 
-    # --------------------------------------
-    # ПРОВЕРЯЕМ АДМИНИСТРАТОРА
-    # --------------------------------------
-
     if message.from_user.id != ADMIN_ID:
 
         await message.answer(
-
-            "❌ У вас нет доступа "
-            "к этой команде."
-
+            "❌ У вас нет доступа."
         )
 
         return
-
-    # --------------------------------------
-    # ПОЛУЧАЕМ ТЕКСТ
-    # --------------------------------------
 
     text = message.text or ""
 
     broadcast_text = text[
         len("/broadcast"):
     ].strip()
-
-    # --------------------------------------
-    # ЕСЛИ ТЕКСТ НЕ УКАЗАН
-    # --------------------------------------
 
     if not broadcast_text:
 
@@ -552,10 +664,6 @@ async def broadcast(
 
         return
 
-    # --------------------------------------
-    # ЗАГРУЖАЕМ ПОЛЬЗОВАТЕЛЕЙ
-    # --------------------------------------
-
     users = load_users()
 
     await message.answer(
@@ -569,10 +677,6 @@ async def broadcast(
     success = 0
 
     failed = 0
-
-    # --------------------------------------
-    # РАССЫЛКА
-    # --------------------------------------
 
     for user_id in users:
 
@@ -588,18 +692,9 @@ async def broadcast(
 
             success += 1
 
-            await asyncio.sleep(
-                0.1
-            )
+            await asyncio.sleep(0.1)
 
         except TelegramRetryAfter as error:
-
-            print(
-
-                f"Telegram попросил "
-                f"подождать {error.retry_after} сек."
-
-            )
 
             await asyncio.sleep(
                 error.retry_after
@@ -617,31 +712,17 @@ async def broadcast(
 
                 success += 1
 
-            except Exception as retry_error:
+            except Exception:
 
                 failed += 1
-
-                print(
-
-                    f"Повторная ошибка "
-                    f"{user_id}: {retry_error}"
-
-                )
 
         except Exception as error:
 
             failed += 1
 
             print(
-
-                f"Ошибка отправки "
-                f"{user_id}: {error}"
-
+                f"Ошибка {user_id}: {error}"
             )
-
-    # --------------------------------------
-    # РЕЗУЛЬТАТ
-    # --------------------------------------
 
     await message.answer(
 
@@ -654,9 +735,9 @@ async def broadcast(
     )
 
 
-# ==========================================
+# ============================================================
 # HTTP SERVER ДЛЯ RENDER
-# ==========================================
+# ============================================================
 
 async def health_check(request):
 
@@ -679,9 +760,7 @@ async def start_web_server():
         health_check
     )
 
-    runner = web.AppRunner(
-        app
-    )
+    runner = web.AppRunner(app)
 
     await runner.setup()
 
@@ -698,37 +777,34 @@ async def start_web_server():
     await site.start()
 
     print(
-
-        f"HTTP server started "
-        f"on port {PORT}"
-
+        f"HTTP server started on port {PORT}"
     )
 
 
-# ==========================================
+# ============================================================
 # MAIN
-# ==========================================
+# ============================================================
 
 async def main():
 
     print(
-        "================================="
+        "========================================"
     )
 
     print(
-        "Telegram Bot is starting..."
+        "Telegram Bot starting..."
     )
 
     print(
-        f"Price: {PRICE} Stars"
+        f"Курс: {STAR_RATE} RUB / ⭐️"
     )
 
     print(
-        f"Access: @socially_exhausted"
+        f"Минимум: {MIN_STARS}"
     )
 
     print(
-        f"HTTP port: {PORT}"
+        f"Максимум: {MAX_STARS}"
     )
 
     print(
@@ -736,23 +812,21 @@ async def main():
     )
 
     print(
-        "================================="
+        f"Port: {PORT}"
     )
 
-    # Запускаем HTTP-сервер
+    print(
+        "========================================"
+    )
 
     await start_web_server()
 
-    # Запускаем Telegram-бота
-
-    await dp.start_polling(
-        bot
-    )
+    await dp.start_polling(bot)
 
 
-# ==========================================
+# ============================================================
 # START
-# ==========================================
+# ============================================================
 
 if __name__ == "__main__":
 
@@ -766,4 +840,4 @@ if __name__ == "__main__":
 
         print(
             "Bot stopped."
-)
+        )
