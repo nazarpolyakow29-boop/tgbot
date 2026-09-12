@@ -13,7 +13,6 @@ from aiogram.types import (
     InlineKeyboardButton,
     LabeledPrice,
     PreCheckoutQuery,
-    FSInputFile
 )
 from aiogram.exceptions import TelegramRetryAfter
 
@@ -29,26 +28,25 @@ ADMIN_ID = 5800940022
 PORT = int(os.getenv("PORT", 10000))
 
 USERS_FILE = "users.json"
+CONFIG_FILE = "config.json"
 
-# Имя вашего файла с фото
-PHOTO_PATH = "IMG_20260831_212728_314.jpg"
+# Цена доступа
+PRICE = 10
 
-# Курс выкупа
-STAR_RATE = 1.4
+# Начальная ссылка на видео
+DEFAULT_VIDEO_LINK = "https://t.me/+uMzPPsbNqVYyZTlk"
 
-# Лимиты
-MIN_STARS = 50
-MAX_STARS = 100_000
+# Payload платежа
+PAYMENT_PAYLOAD = "video_access_10_stars"
 
 
 # ============================================================
-# ПРОВЕРКА ТОКЕНА
+# ПРОВЕРКА BOT TOKEN
 # ============================================================
 
 if not BOT_TOKEN:
     raise ValueError(
-        "BOT_TOKEN не найден. "
-        "Добавь BOT_TOKEN в Environment Variables."
+        "Ошибка: переменная окружения BOT_TOKEN не найдена!"
     )
 
 
@@ -78,12 +76,7 @@ def load_json(filename):
             encoding="utf-8"
         ) as file:
 
-            data = json.load(file)
-
-            if isinstance(data, list):
-                return data
-
-            return []
+            return json.load(file)
 
     except (
         json.JSONDecodeError,
@@ -110,11 +103,18 @@ def save_json(filename, data):
         )
 
 
+# ============================================================
+# USERS
+# ============================================================
+
 def load_users():
 
-    return load_json(
-        USERS_FILE
-    )
+    data = load_json(USERS_FILE)
+
+    if isinstance(data, list):
+        return data
+
+    return []
 
 
 def save_users(users):
@@ -126,10 +126,76 @@ def save_users(users):
 
 
 # ============================================================
-# ГЛАВНОЕ МЕНЮ
+# CONFIG
 # ============================================================
 
-def main_keyboard():
+def load_config():
+
+    if not os.path.exists(CONFIG_FILE):
+
+        config = {
+            "video_link": DEFAULT_VIDEO_LINK
+        }
+
+        save_json(
+            CONFIG_FILE,
+            config
+        )
+
+        return config
+
+    try:
+
+        with open(
+            CONFIG_FILE,
+            "r",
+            encoding="utf-8"
+        ) as file:
+
+            config = json.load(file)
+
+            if not isinstance(config, dict):
+                raise ValueError
+
+            if "video_link" not in config:
+                config["video_link"] = DEFAULT_VIDEO_LINK
+
+            return config
+
+    except Exception:
+
+        return {
+            "video_link": DEFAULT_VIDEO_LINK
+        }
+
+
+def get_video_link():
+
+    config = load_config()
+
+    return config.get(
+        "video_link",
+        DEFAULT_VIDEO_LINK
+    )
+
+
+def set_video_link(new_link):
+
+    config = load_config()
+
+    config["video_link"] = new_link
+
+    save_json(
+        CONFIG_FILE,
+        config
+    )
+
+
+# ============================================================
+# КНОПКА ОПЛАТЫ
+# ============================================================
+
+def get_payment_keyboard():
 
     return InlineKeyboardMarkup(
 
@@ -137,15 +203,8 @@ def main_keyboard():
 
             [
                 InlineKeyboardButton(
-                    text="⭐️ Купить звёзды",
-                    callback_data="buy_stars"
-                )
-            ],
-
-            [
-                InlineKeyboardButton(
-                    text="💰 Продажа звёзд",
-                    callback_data="sell_stars"
+                    text="⭐️ Оплатить 10 Stars",
+                    callback_data="pay_10_stars"
                 )
             ]
 
@@ -163,6 +222,10 @@ async def start(message: Message):
 
     user_id = message.from_user.id
 
+    # --------------------------------------------------------
+    # Сохраняем пользователя
+    # --------------------------------------------------------
+
     users = load_users()
 
     if user_id not in users:
@@ -175,174 +238,50 @@ async def start(message: Message):
             f"Новый пользователь: {user_id}"
         )
 
-    photo = FSInputFile(PHOTO_PATH)
+    # --------------------------------------------------------
+    # Сообщение
+    # --------------------------------------------------------
 
-    await message.answer_photo(
+    await message.answer(
 
-        photo=photo,
+        "👋 Привет!\n\n"
 
-        caption=(
-            "☺️ Привет, бурмалдун!\n\n"
-            "Здесь вы можете быстро приобрести "
-            "Telegram Stars и Premium подписку "
-            "на свой аккаунт за рубли\n\n"
-            "⭐️ При помощи нашего сервиса купили "
-            "34 469 799 звёзд "
-            "(40 329 665 ₽)⭐️"
-        ),
+        "🎬 Чтобы получить видео, "
+        "оплатите счёт на 10 ⭐️\n\n"
 
-        reply_markup=main_keyboard()
+        "Если у вас нет 10 ⭐️, "
+        "можете написать 30 комментариев "
+        "под разными видео в TikTok.\n\n"
+
+        "Подробнее: @yuzaye",
+
+        reply_markup=get_payment_keyboard()
 
     )
 
 
 # ============================================================
-# КНОПКА "КУПИТЬ ЗВЁЗДЫ"
+# КНОПКА ОПЛАТЫ
 # ============================================================
 
-@dp.callback_query(F.data == "buy_stars")
-async def buy_stars(
+@dp.callback_query(F.data == "pay_10_stars")
+async def pay_10_stars(
     callback: CallbackQuery
 ):
-
-    await callback.answer()
-
-
-# ============================================================
-# КНОПКА "ПРОДАЖА ЗВЁЗД"
-# ============================================================
-
-@dp.callback_query(F.data == "sell_stars")
-async def sell_stars(
-    callback: CallbackQuery
-):
-
-    photo = FSInputFile(PHOTO_PATH)
-
-    await callback.message.answer_photo(
-
-        photo=photo,
-
-        caption=(
-            "💰 Курс выкупа: 1,4₽ за 1 ⭐️\n\n"
-            "— Минимум: 50 звёзд\n"
-            "— Максимум (за один заказ): 100,000 звёзд\n\n"
-            "🔎 Введите количество звёзд для продажи:"
-        )
-
-    )
-
-    await callback.answer()
-
-
-# ============================================================
-# ОБРАБОТКА ВВОДА КОЛИЧЕСТВА
-# ============================================================
-
-@dp.message(F.text)
-async def process_amount(
-    message: Message
-):
-
-    text = message.text.strip()
-
-    if text.startswith("/"):
-        return
-
-    photo = FSInputFile(PHOTO_PATH)
-
-    # --------------------------------------------------------
-    # Проверяем число
-    # --------------------------------------------------------
-
-    if not text.isdigit():
-
-        await message.answer_photo(
-
-            photo=photo,
-
-            caption=(
-                "❌ Введите количество звёзд "
-                "целым числом.\n\n"
-                "Например:\n"
-                "500"
-            )
-
-        )
-
-        return
-
-    stars = int(text)
-
-    # --------------------------------------------------------
-    # Минимум
-    # --------------------------------------------------------
-
-    if stars < MIN_STARS:
-
-        await message.answer_photo(
-
-            photo=photo,
-
-            caption=f"❌ Минимальное количество — {MIN_STARS} ⭐️"
-
-        )
-
-        return
-
-    # --------------------------------------------------------
-    # Максимум
-    # --------------------------------------------------------
-
-    if stars > MAX_STARS:
-
-        await message.answer_photo(
-
-            photo=photo,
-
-            caption=f"❌ Максимальное количество — {MAX_STARS:,} ⭐️".replace(",", " ")
-
-        )
-
-        return
-
-    # --------------------------------------------------------
-    # Расчёт
-    # --------------------------------------------------------
-
-    rub_amount = stars * STAR_RATE
-
-    payload = (
-        f"stars_order:"
-        f"{message.from_user.id}:"
-        f"{stars}"
-    )
 
     try:
 
-        await message.answer_photo(
+        await callback.message.answer_invoice(
 
-            photo=photo,
-
-            caption=(
-                f"⭐️ Количество: {stars:,}\n"
-                f"💰 Расчёт по курсу: {rub_amount:,.2f} ₽\n\n"
-                f"⚠️ Telegram-платёж будет выставлен в Stars, а не в рублях.\n"
-                f"⚠️ Звёзды оплачиваем только в рублях, гривнах, криптовалюте.".replace(",", " ")
-            )
-
-        )
-
-        await message.answer_invoice(
-
-            title="⭐️ Telegram Stars",
+            title="🎬 Получение видео",
 
             description=(
-                f"Оплата за {stars:,} Telegram Stars"
-            ).replace(",", " "),
+                "Оплата доступа к видео"
+            ),
 
-            payload=payload,
+            payload=PAYMENT_PAYLOAD,
 
+            # Для Telegram Stars provider token пустой
             provider_token="",
 
             currency="XTR",
@@ -351,9 +290,9 @@ async def process_amount(
 
                 LabeledPrice(
 
-                    label=f"{stars:,} Stars".replace(",", " "),
+                    label="🎬 Доступ к видео",
 
-                    amount=stars
+                    amount=PRICE
 
                 )
 
@@ -361,20 +300,19 @@ async def process_amount(
 
         )
 
+        await callback.answer()
+
     except Exception as error:
 
         print(
-            f"Ошибка создания invoice: {error}"
+            f"Ошибка создания счёта: {error}"
         )
 
-        await message.answer_photo(
+        await callback.answer(
 
-            photo=photo,
+            "❌ Не удалось создать счёт.",
 
-            caption=(
-                "❌ Не удалось создать счёт.\n\n"
-                "Попробуйте ещё раз."
-            )
+            show_alert=True
 
         )
 
@@ -384,57 +322,31 @@ async def process_amount(
 # ============================================================
 
 @dp.pre_checkout_query()
-async def pre_checkout(
+async def process_pre_checkout(
     query: PreCheckoutQuery
 ):
 
-    payload = query.invoice_payload
+    # --------------------------------------------------------
+    # Проверяем payload
+    # --------------------------------------------------------
 
-    if not payload.startswith("stars_order:"):
-
-        await query.answer(
-
-            ok=False,
-
-            error_message="Неверный заказ."
-
-        )
-
-        return
-
-    try:
-
-        parts = payload.split(":")
-
-        user_id = int(parts[1])
-
-        stars = int(parts[2])
-
-    except Exception:
+    if query.invoice_payload != PAYMENT_PAYLOAD:
 
         await query.answer(
 
             ok=False,
 
-            error_message="Ошибка заказа."
+            error_message="Неверный платёж."
 
         )
 
         return
 
-    if user_id != query.from_user.id:
+    # --------------------------------------------------------
+    # Проверяем сумму
+    # --------------------------------------------------------
 
-        await query.answer(
-
-            ok=False,
-
-            error_message="Этот счёт предназначен другому пользователю."
-
-        )
-
-        return
-
-    if query.total_amount != stars:
+    if query.total_amount != PRICE:
 
         await query.answer(
 
@@ -445,6 +357,10 @@ async def pre_checkout(
         )
 
         return
+
+    # --------------------------------------------------------
+    # Подтверждаем платёж
+    # --------------------------------------------------------
 
     await query.answer(
         ok=True
@@ -460,72 +376,108 @@ async def successful_payment(
     message: Message
 ):
 
-    photo = FSInputFile(PHOTO_PATH)
-
     payment = message.successful_payment
 
-    payload = payment.invoice_payload
+    # --------------------------------------------------------
+    # Проверяем payload
+    # --------------------------------------------------------
 
-    if not payload.startswith("stars_order:"):
+    if payment.invoice_payload != PAYMENT_PAYLOAD:
 
-        await message.answer_photo(
-            photo=photo,
-            caption="❌ Неизвестный платёж."
+        await message.answer(
+            "❌ Ошибка платежа."
         )
 
         return
 
-    try:
+    user_id = message.from_user.id
 
-        parts = payload.split(":")
+    # --------------------------------------------------------
+    # Получаем актуальную ссылку
+    # --------------------------------------------------------
 
-        user_id = int(parts[1])
+    video_link = get_video_link()
 
-        stars = int(parts[2])
-
-    except Exception:
-
-        await message.answer_photo(
-            photo=photo,
-            caption="❌ Ошибка обработки платежа."
-        )
-
-        return
-
-    rub_amount = stars * STAR_RATE
+    # --------------------------------------------------------
+    # Лог
+    # --------------------------------------------------------
 
     print(
         "========================================"
     )
-    print("НОВЫЙ ПЛАТЁЖ")
-    print(f"Пользователь: {user_id}")
-    print(f"Stars: {stars}")
-    print(f"Расчёт: {rub_amount:.2f} RUB")
-    print("Charge ID:", payment.telegram_payment_charge_id)
+
+    print(
+        "НОВАЯ ОПЛАТА"
+    )
+
+    print(
+        f"User ID: {user_id}"
+    )
+
+    print(
+        f"Stars: {payment.total_amount}"
+    )
+
+    print(
+        f"Video: {video_link}"
+    )
+
+    print(
+        "Charge ID:",
+        payment.telegram_payment_charge_id
+    )
+
     print(
         "========================================"
     )
+
+    # --------------------------------------------------------
+    # Отправляем видео
+    # --------------------------------------------------------
+
+    await message.answer(
+
+        "✅ Оплата успешно завершена!\n\n"
+
+        "🎬 Ваше видео здесь:\n\n"
+
+        f"{video_link}"
+
+    )
+
+    # --------------------------------------------------------
+    # Уведомляем администратора
+    # --------------------------------------------------------
 
     try:
 
         username = message.from_user.username
 
         if username:
+
             username_text = f"@{username}"
+
         else:
+
             username_text = "без username"
 
         await bot.send_message(
 
             ADMIN_ID,
 
-            "💰 НОВЫЙ ПЛАТЁЖ\n\n"
-            f"👤 Пользователь: {message.from_user.full_name}\n"
-            f"🔗 Username: {username_text}\n"
-            f"🆔 ID: {user_id}\n\n"
-            f"⭐️ Количество: {stars:,}\n"
-            f"💵 Расчёт по курсу: {rub_amount:,.2f} ₽\n\n"
-            "⚠️ Проверьте заказ.".replace(",", " ")
+            "💰 НОВАЯ ОПЛАТА\n\n"
+
+            f"👤 Пользователь: "
+            f"{message.from_user.full_name}\n"
+
+            f"🔗 Username: "
+            f"{username_text}\n"
+
+            f"🆔 ID: "
+            f"{user_id}\n\n"
+
+            f"⭐️ Оплачено: "
+            f"{payment.total_amount} Stars"
 
         )
 
@@ -535,17 +487,114 @@ async def successful_payment(
             f"Ошибка уведомления админа: {error}"
         )
 
-    await message.answer_photo(
 
-        photo=photo,
+# ============================================================
+# /SUPPORT
+# ============================================================
 
-        caption=(
-            "✅ Оплата успешно завершена!\n\n"
-            f"⭐️ Количество: {stars:,}\n"
-            f"💰 Расчёт: {rub_amount:,.2f} ₽\n\n"
-            "Спасибо!"
+@dp.message(Command("support"))
+async def support(
+    message: Message
+):
+
+    await message.answer(
+
+        "🆘 Если вам нужна помощь, "
+        "пишите сюда:\n\n"
+        "@yuzaye"
+
+    )
+
+
+# ============================================================
+# /CHANGE
+# ============================================================
+
+@dp.message(Command("change"))
+async def change_video(
+    message: Message
+):
+
+    # --------------------------------------------------------
+    # Только администратор
+    # --------------------------------------------------------
+
+    if message.from_user.id != ADMIN_ID:
+
+        await message.answer(
+            "❌ У вас нет доступа к этой команде."
         )
 
+        return
+
+    # --------------------------------------------------------
+    # Получаем ссылку
+    # --------------------------------------------------------
+
+    text = message.text or ""
+
+    new_link = text[
+        len("/change"):
+    ].strip()
+
+    # --------------------------------------------------------
+    # Если ссылка не указана
+    # --------------------------------------------------------
+
+    if not new_link:
+
+        await message.answer(
+
+            "❌ Вы не указали ссылку.\n\n"
+
+            "Использование:\n"
+
+            "/change https://t.me/your_video"
+
+        )
+
+        return
+
+    # --------------------------------------------------------
+    # Проверяем ссылку
+    # --------------------------------------------------------
+
+    if not (
+        new_link.startswith("https://t.me/")
+        or new_link.startswith("http://t.me/")
+        or new_link.startswith("t.me/")
+    ):
+
+        await message.answer(
+
+            "❌ Неверная ссылка.\n\n"
+
+            "Нужна ссылка вида:\n"
+
+            "https://t.me/..."
+
+        )
+
+        return
+
+    # --------------------------------------------------------
+    # Сохраняем новую ссылку
+    # --------------------------------------------------------
+
+    set_video_link(new_link)
+
+    await message.answer(
+
+        "✅ Ссылка успешно изменена!\n\n"
+
+        "🎬 Новая ссылка:\n"
+
+        f"{new_link}"
+
+    )
+
+    print(
+        f"Администратор изменил ссылку: {new_link}"
     )
 
 
@@ -558,10 +607,12 @@ async def users_count(
     message: Message
 ):
 
+    # Только администратор
+
     if message.from_user.id != ADMIN_ID:
 
         await message.answer(
-            "❌ У вас нет доступа."
+            "❌ У вас нет доступа к этой команде."
         )
 
         return
@@ -570,8 +621,10 @@ async def users_count(
 
     await message.answer(
 
-        "📊 Статистика\n\n"
-        f"👥 Пользователей: {len(users)}"
+        "📊 Статистика бота\n\n"
+
+        f"👥 Всего пользователей: "
+        f"{len(users)}"
 
     )
 
@@ -585,10 +638,12 @@ async def broadcast(
     message: Message
 ):
 
+    # Только администратор
+
     if message.from_user.id != ADMIN_ID:
 
         await message.answer(
-            "❌ У вас нет доступа."
+            "❌ У вас нет доступа к этой команде."
         )
 
         return
@@ -599,6 +654,10 @@ async def broadcast(
         len("/broadcast"):
     ].strip()
 
+    # --------------------------------------------------------
+    # Если текст не указан
+    # --------------------------------------------------------
+
     if not broadcast_text:
 
         users = load_users()
@@ -606,39 +665,48 @@ async def broadcast(
         await message.answer(
 
             "📢 Рассылка\n\n"
+
             f"👥 Получателей: {len(users)}\n\n"
+
             "Использование:\n\n"
+
             "/broadcast Ваш текст"
 
         )
 
         return
 
+    # --------------------------------------------------------
+    # Получаем пользователей
+    # --------------------------------------------------------
+
     users = load_users()
 
     await message.answer(
 
         "📢 Начинаю рассылку.\n\n"
+
         f"👥 Получателей: {len(users)}"
 
     )
 
-    photo = FSInputFile(PHOTO_PATH)
-
     success = 0
+
     failed = 0
+
+    # --------------------------------------------------------
+    # Рассылка
+    # --------------------------------------------------------
 
     for user_id in users:
 
         try:
 
-            await bot.send_photo(
+            await bot.send_message(
 
                 chat_id=user_id,
 
-                photo=photo,
-
-                caption=broadcast_text
+                text=broadcast_text
 
             )
 
@@ -648,40 +716,55 @@ async def broadcast(
 
         except TelegramRetryAfter as error:
 
+            print(
+                f"Telegram попросил "
+                f"подождать {error.retry_after} сек."
+            )
+
             await asyncio.sleep(
                 error.retry_after
             )
 
             try:
 
-                await bot.send_photo(
+                await bot.send_message(
 
                     chat_id=user_id,
 
-                    photo=photo,
-
-                    caption=broadcast_text
+                    text=broadcast_text
 
                 )
 
                 success += 1
 
-            except Exception:
+            except Exception as retry_error:
 
                 failed += 1
+
+                print(
+                    f"Повторная ошибка "
+                    f"{user_id}: {retry_error}"
+                )
 
         except Exception as error:
 
             failed += 1
 
             print(
-                f"Ошибка {user_id}: {error}"
+                f"Ошибка отправки "
+                f"{user_id}: {error}"
             )
+
+    # --------------------------------------------------------
+    # Результат
+    # --------------------------------------------------------
 
     await message.answer(
 
         "✅ Рассылка завершена!\n\n"
+
         f"📨 Успешно: {success}\n"
+
         f"❌ Ошибок: {failed}"
 
     )
@@ -729,7 +812,8 @@ async def start_web_server():
     await site.start()
 
     print(
-        f"HTTP server started on port {PORT}"
+        f"HTTP server started "
+        f"on port {PORT}"
     )
 
 
@@ -742,19 +826,36 @@ async def main():
     print(
         "========================================"
     )
-    print("Telegram Bot starting...")
-    print(f"Курс: {STAR_RATE} RUB / ⭐️")
-    print(f"Минимум: {MIN_STARS}")
-    print(f"Максимум: {MAX_STARS}")
-    print(f"Admin ID: {ADMIN_ID}")
-    print(f"Port: {PORT}")
+
+    print(
+        "Telegram Bot is starting..."
+    )
+
+    print(
+        f"Цена: {PRICE} Stars"
+    )
+
+    print(
+        f"Видео: {get_video_link()}"
+    )
+
+    print(
+        f"Admin ID: {ADMIN_ID}"
+    )
+
+    print(
+        f"HTTP port: {PORT}"
+    )
+
     print(
         "========================================"
     )
 
     await start_web_server()
 
-    await dp.start_polling(bot)
+    await dp.start_polling(
+        bot
+    )
 
 
 # ============================================================
@@ -774,4 +875,3 @@ if __name__ == "__main__":
         print(
             "Bot stopped."
     )
-        
