@@ -31,7 +31,7 @@ USERS_FILE = "users.json"
 CONFIG_FILE = "config.json"
 
 # Цена доступа
-PRICE = 10
+PRICE = 6
 
 # Начальная ссылка на видео
 DEFAULT_VIDEO_LINK = "https://t.me/+uMzPPsbNqVYyZTlk"
